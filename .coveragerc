@@ -1,0 +1,7 @@
+[run]
+branch = True
+source = shade_ansible
+omit = shade_ansible/tests/*,shade_ansible/openstack/*
+
+[report]
+ignore-errors = True
