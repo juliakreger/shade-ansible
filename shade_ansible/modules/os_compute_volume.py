@@ -182,15 +182,16 @@ def main():
         timeout=dict(default=180)
     )
     module_kwargs = spec.openstack_module_kwargs(
-        mutually_exclusive = [
-            ['server_id', 'server_name']
-            ['volume_id','volume_name'],
+        mutually_exclusive=[
+            ['server_id', 'server_name'],
+            ['volume_id', 'volume_name'],
         ],
-        require_one_of=[
+        required_one_of=[
             ['server_id', 'server_name'],
             ['volume_id','volume_name'],
         ],
     )
+
     module = AnsibleModule(argument_spec, **module_kwargs)
 
     try:

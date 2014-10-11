@@ -44,7 +44,7 @@ def openstack_module_kwargs(**kwargs):
     for key in ('mutually_exclusive', 'required_together', 'required_one_of'):
         if key in kwargs:
             if key in ret:
-                ret[key].append(kwargs[key])
+                ret[key].extend(kwargs[key])
             else:
                 ret[key] = kwargs[key]
 
