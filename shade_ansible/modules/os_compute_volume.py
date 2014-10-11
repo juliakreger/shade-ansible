@@ -105,6 +105,13 @@ def _check_server_attachments(volume, server_id):
     return False
 
 
+def _check_device_attachment(volume, device, server_id):
+    for attach in volume.attachments:
+        if server_id == attach['server_id'] and device == attach['device']:
+            return True
+    return False
+
+
 def _present_volume(nova, cinder, module):
     try:
         volume = cinder.volumes.get(module.params['volume_id'])
@@ -114,13 +121,19 @@ def _present_volume(nova, cinder, module):
     try:
         if _check_server_attachments(volume, module.params['server_id']):
             # Attached. Now, do we care about device?
-            if module.params['device'] and not _check_device_attachment(volume, modules.params['device']):
+            if (module.params['device'] and
+                not _check_device_attachment(
+                    volume, modules.params['device'],
+                    module.params['server_id']):
                 nova.volumes.delete_server_volume(
                     module.params['server_id'],
                     module.params['volume_id'])
                 volume = _wait_for_detach(cinder, module)
             else:
-                module.exit_json(changed=False, result='Volume already attached')
+                module.exit_json(
+                    changed=False,
+                    result='Volume already attached',
+                    attachments=volume.attachments)
     except Exception as e:
         module.fail_json(msg='Error processing volume:%s' % str(e))
 
@@ -145,7 +158,7 @@ def _present_volume(nova, cinder, module):
 
     if attachment:
         module.exit_json(
-            changed=True, id=volume.id, device=attachment['device'])
+            changed=True, id=volume.id, attachments=volume.attachments)
     module.fail_json(
         msg='Adding volume {volume} to server {server} timed out'.format(
             volume=volume.display_name, server=module.params['server_id']))
