@@ -29,6 +29,9 @@ try:
 except ImportError:
     print("failed=True msg='novaclient is required for this module'")
 
+import shade
+from shade_ansible import spec
+
 DOCUMENTATION = '''
 ---
 module: os_compute
@@ -145,9 +148,9 @@ EXAMPLES = '''
 # Creates a new VM and attaches to a network and passes metadata to the instance
 - os_compute:
        state: present
-       login_username: admin
-       login_password: admin
-       login_tenant_name: admin
+       username: admin
+       password: admin
+       project_name: admin
        name: vm1
        image_id: 4f905f38-e52a-43d2-b6ec-754a13ffb529
        key_name: ansible_key
@@ -166,9 +169,9 @@ EXAMPLES = '''
   - name: launch an instance
     os_compute:
       state: present
-      login_username: username
-      login_password: Equality7-2521
-      login_tenant_name: username-project1
+      username: username
+      password: Equality7-2521
+      project_name: username-project1
       name: vm1
       auth_url: https://region-b.geo-1.identity.hpcloudsvc.com:35357/v2.0/
       region_name: region-b.geo-1
@@ -187,9 +190,9 @@ EXAMPLES = '''
   - name: launch an instance
     os_compute:
       state: present
-      login_username: username
-      login_password: Equality7-2521
-      login_tenant_name: username-project1
+      username: username
+      password: Equality7-2521
+      project_name: username-project1
       name: vm1
       auth_url: https://region-b.geo-1.identity.hpcloudsvc.com:35357/v2.0/
       region_name: region-b.geo-1
@@ -209,9 +212,9 @@ EXAMPLES = '''
     os_compute:
       name: vm1
       state: present
-      login_username: username
-      login_password: Equality7-2521
-      login_tenant_name: username-project1
+      username: username
+      password: Equality7-2521
+      project_name: username-project1
       auth_url: https://region-b.geo-1.identity.hpcloudsvc.com:35357/v2.0/
       region_name: region-b.geo-1
       image_name: Ubuntu Server 14.04
@@ -226,9 +229,9 @@ EXAMPLES = '''
     os_compute:
       name: vm1
       state: present
-      login_username: username
-      login_password: Equality7-2521
-      login_tenant_name: username-project1
+      username: username
+      password: Equality7-2521
+      project_name: username-project1
       auth_url: https://identity.api.rackspacecloud.com/v2.0/
       region_name: DFW
       image_name: Ubuntu 14.04 LTS (Trusty Tahr) (PVHVM)
@@ -492,8 +495,8 @@ def _get_server_state(module, nova):
 
 
 def main():
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
+
+    argument_spec = spec.openstack_argument_spec(
         name                            = dict(required=True),
         image_id                        = dict(default=None),
         image_name                      = dict(default=None),
@@ -513,9 +516,8 @@ def main():
         auto_floating_ip                = dict(default=False, type='bool'),
         floating_ips                    = dict(default=None),
         floating_ip_pools               = dict(default=None),
-    ))
-    module = AnsibleModule(
-        argument_spec=argument_spec,
+    )
+    module_kwargs = spec.openstack_module_kwargs(
         mutually_exclusive=[
             ['auto_floating_ip','floating_ips'],
             ['auto_floating_ip','floating_ip_pools'],
@@ -524,9 +526,10 @@ def main():
             ['flavor_id','flavor_ram'],
         ],
     )
+    module = AnsibleModule(argument_spec, **module_kwargs)
 
     try:
-        cloud = openstack_cloud_from_module(module)
+        cloud = shade.openstack_cloud(**module.params)
         nova = cloud.nova_client
 
         if module.params['state'] == 'present':
@@ -538,7 +541,7 @@ def main():
         if module.params['state'] == 'absent':
             _get_server_state(module, nova)
             _delete_server(module, nova)
-    except OpenStackCloudException as e:
+    except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 
 # this is magic, see lib/ansible/module_common.py

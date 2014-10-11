@@ -16,6 +16,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this software.  If not, see <http://www.gnu.org/licenses/>.
 
+import shade
+from shade_ansible import spec
+
+
 DOCUMENTATION = '''
 ---
 module: os_image
@@ -85,9 +89,9 @@ requirements: ["glanceclient", "keystoneclient"]
 
 EXAMPLES = '''
 # Upload an image from an HTTP URL
-- os_image: login_username=admin
-                login_password=passme
-                login_tenant_name=admin
+- os_image: username=admin
+                password=passme
+                project_name=admin
                 name=cirros
                 container_format=bare
                 disk_format=qcow2
@@ -138,8 +142,7 @@ def _glance_delete_image(module, params, client):
 
 def main():
 
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
+    argument_spec = openstack_argument_spec(
         name              = dict(required=True),
         disk_format       = dict(default='qcow2', choices=['aki', 'vhd', 'vmdk', 'raw', 'qcow2', 'vdi', 'iso']),
         container_format  = dict(default='bare', choices=['aki', 'ari', 'bare', 'ovf']),
@@ -151,17 +154,19 @@ def main():
         timeout           = dict(default=180),
         file              = dict(default=None),
         state             = dict(default='present', choices=['absent', 'present'])
-    ))
-    module = AnsibleModule(
-        argument_spec=argument_spec,
+    )
+    module_kwargs = spec.openstack_module_kwargs(
         mutually_exclusive = [['file','copy_from']],
     )
+    module = AnsibleModule(argument_spec, **module_kwargs)
+
     if module.params['state'] == 'present':
         if not module.params['file'] and not module.params['copy_from']:
             module.fail_json(msg="Either file or copy_from variable should be set to create the image")
 
     try:
-        cloud = openstack_cloud_from_module(module)
+        cloud = shade.openstack_cloud(**module.params)
+
         id = cloud.get_image_id(module.params['name'])
 
         if module.params['state'] == 'present':
@@ -174,7 +179,7 @@ def main():
                 module.exit_json(changed=False, result="Success")
             else:
                 _glance_delete_image(module, module.params, cloud.glance_client)
-    except OpenStackCloudException as e:
+    except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 
 # this is magic, see lib/ansible/module_common.py

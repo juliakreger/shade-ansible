@@ -16,10 +16,12 @@
 import time
 
 try:
-    from cinderclient.v1 import client as cinder_client
     from cinderclient import exceptions as cinder_exc
 except ImportError:
     print("failed=True msg='cinderclient is required for this module'")
+
+from shade_ansible import spec
+import shade
 
 DOCUMENTATION = '''
 ---
@@ -81,9 +83,9 @@ EXAMPLES = '''
   - name: create 40g test volume
     os_volume:
       state: present
-      login_username: username
-      login_password: Equality7-2521
-      login_tenant_name: username-project1
+      username: username
+      password: Equality7-2521
+      project_name: username-project1
       auth_url: https://region-b.geo-1.identity.hpcloudsvc.com:35357/v2.0/
       region_name: region-b.geo-1
       availability_zone: az2
@@ -151,8 +153,7 @@ def _absent_volume(module, cinder, cloud):
 
 
 def main():
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
+    argument_spec = openstack_argument_spec(
         state                        = dict(required=True, choices=['present', 'absent']),
         size                         = dict(required=True),
         volume_type                  = dict(default=None),
@@ -163,24 +164,24 @@ def main():
         snapshot_id                  = dict(default=None),
         wait                         = dict(default=False, choices=[True, False]),
         timeout                      = dict(default=180)
-    ))
-    module = AnsibleModule(
-        argument_spec=argument_spec,
+    )
+    module_kwargs = spec.openstack_module_kwargs(
         mutually_exclusive = [
             ['image_id', 'snapshot_id'],
             ['image_name', 'snapshot_id'],
             ['image_id', 'image_name']
         ],
     )
+    module = AnsibleModule(argument_spec=argument_spec, **module_kwargs)
 
     try:
-        cloud = openstack_cloud_from_module(module)
+        cloud = shade.openstack_cloud(**module.params)
         cinder = cloud.cinder_client
         if module.params['state'] == 'present':
             _present_volume(module, cinder, cloud)
         if module.params['state'] == 'absent':
             _absent_volume(module, cinder, cloud)
-    except OpenStackCloudException as e:
+    except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 
 # this is magic, see lib/ansible/module_common.py

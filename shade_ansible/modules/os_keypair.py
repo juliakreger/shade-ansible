@@ -19,6 +19,9 @@
 
 import time
 
+import shade
+from shade_ansible import spec
+
 DOCUMENTATION = '''
 ---
 module: os_keypair
@@ -49,26 +52,26 @@ requirements: ["novaclient"]
 
 EXAMPLES = '''
 # Creates a key pair with the running users public key
-- os_keypair: state=present login_username=admin
-                login_password=admin login_tenant_name=admin name=ansible_key
+- os_keypair: state=present username=admin
+                password=admin project_name=admin name=ansible_key
                 public_key={{ lookup('file','~/.ssh/id_rsa.pub') }}
 
 # Creates a new key pair and the private key returned after the run.
-- os_keypair: state=present login_username=admin login_password=admin
-                login_tenant_name=admin name=ansible_key
+- os_keypair: state=present username=admin password=admin
+                project_name=admin name=ansible_key
 '''
 
 def main():
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
-        name                            = dict(required=True),
-        public_key                      = dict(default=None),
-        state                           = dict(default='present', choices=['absent', 'present'])
-    ))
-    module = AnsibleModule(argument_spec=argument_spec)
+    argument_spec = spec.openstack_argument_spec(
+        name=dict(required=True),
+        public_key=dict(default=None),
+        state=dict(default='present', choices=['absent', 'present'])
+    )
+    module_kwargs = spec.openstack_module_kwargs()
+    module = AnsibleModule(argument_spec, **module_kwargs)
 
     try:
-        nova = openstack_cloud_from_module(module)
+        nova = shade.openstack_cloud(**module.params)
 
         if module.params['state'] == 'present':
             for key in nova.list_keypairs():
@@ -93,7 +96,7 @@ def main():
                         module.fail_json(msg = "The keypair deletion has failed: %s" % e.message)
                     module.exit_json( changed = True, result = "deleted")
             module.exit_json(changed = False, result = "not present")
-    except OpenStackCloudException as e:
+    except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 
 # this is magic, see lib/ansible/module_common.py

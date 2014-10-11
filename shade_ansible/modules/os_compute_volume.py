@@ -26,6 +26,9 @@ except ImportError:
 
 import time
 
+import shade
+from shade_ansible import spec
+
 DOCUMENTATION = '''
 ---
 module: os_compute_volume
@@ -76,9 +79,9 @@ EXAMPLES = '''
   - name: attach volume to host
     os_compute_volume:
       state: present
-      login_username: admin
-      login_password: admin
-      login_tenant_name: admin
+      username: admin
+      password: admin
+      project_name: admin
       auth_url: https://region-b.geo-1.identity.hpcloudsvc.com:35357/v2.0/
       region_name: region-b.geo-1
       server_name: Mysql-server
@@ -100,6 +103,7 @@ def _check_server_attachments(volume, server_id, volume_id):
         if server_id == attach['server_id']:
             return True
     return False
+
 
 def _present_volume(nova, cinder, module):
     try:
@@ -161,8 +165,7 @@ def _absent_volume(nova, cinder, module):
 
 
 def main():
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
+    argument_spec = openstack_argument_spec(
         server_id                    = dict(default=None),
         server_name                  = dict(default=None),
         volume_name                  = dict(default=None),
@@ -171,17 +174,17 @@ def main():
         state                        = dict(default='present', choices=['absent', 'present']),
         wait                         = dict(default=False, choices=[True, False]),
         timeout                      = dict(default=180)
-    ))
-    module = AnsibleModule(
-        argument_spec=argument_spec,
+    )
+    module_kwargs = spec.openstack_module_kwargs(
         mutually_exclusive = [
             ['volume_id','volume_name'],
             ['server_id', 'server_name']
         ],
     )
+    module = AnsibleModule(argument_spec, **module_kwargs)
 
     try:
-        cloud = openstack_cloud_from_module(module)
+        cloud = shade.openstack_cloud(**module.params)
         cinder = cloud.cinder_client
         nova = cloud.nova_client
 
@@ -198,7 +201,7 @@ def main():
         if module.params['state'] == 'absent':
             _absent_volume(nova, cinder, module)
 
-    except OpenStackCloudException as e:
+    except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 
 # this is magic, see lib/ansible/module_utils/common.py
