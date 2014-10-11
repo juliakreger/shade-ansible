@@ -98,7 +98,7 @@ def _wait_for_detach(cinder, module):
     return volume
 
 
-def _check_server_attachments(volume, server_id, volume_id):
+def _check_server_attachments(volume, server_id):
     for attach in volume.attachments:
         if server_id == attach['server_id']:
             return True
@@ -142,7 +142,13 @@ def _present_volume(nova, cinder, module):
                 if attach['server_id'] == module.params['server_id']:
                     attachment = attach
                     break
-    module.exit_json(changed=True, id=volume.id, info=attachment)
+
+    if attachment:
+        module.exit_json(
+            changed=True, id=volume.id, device=attachment['device'])
+    module.fail_json(
+        msg='Adding volume {volume} to server {server} timed out'.format(
+            volume=volume.display_name, server=module.params['server_id']))
 
 
 def _absent_volume(nova, cinder, module):
@@ -165,20 +171,24 @@ def _absent_volume(nova, cinder, module):
 
 
 def main():
-    argument_spec = openstack_argument_spec(
-        server_id                    = dict(default=None),
-        server_name                  = dict(default=None),
-        volume_name                  = dict(default=None),
-        volume_id                    = dict(default=None),
-        device                       = dict(default=None),
-        state                        = dict(default='present', choices=['absent', 'present']),
-        wait                         = dict(default=False, choices=[True, False]),
-        timeout                      = dict(default=180)
+    argument_spec = spec.openstack_argument_spec(
+        server_id= dict(default=None),
+        server_name= dict(default=None),
+        volume_id=dict(default=None),
+        volume_name=dict(default=None),
+        device=dict(default=None),
+        state=dict(default='present', choices=['absent', 'present']),
+        wait=dict(default=False, choices=[True, False]),
+        timeout=dict(default=180)
     )
     module_kwargs = spec.openstack_module_kwargs(
         mutually_exclusive = [
-            ['volume_id','volume_name'],
             ['server_id', 'server_name']
+            ['volume_id','volume_name'],
+        ],
+        require_one_of=[
+            ['server_id', 'server_name'],
+            ['volume_id','volume_name'],
         ],
     )
     module = AnsibleModule(argument_spec, **module_kwargs)

@@ -153,17 +153,17 @@ def _absent_volume(module, cinder, cloud):
 
 
 def main():
-    argument_spec = openstack_argument_spec(
-        state                        = dict(required=True, choices=['present', 'absent']),
-        size                         = dict(required=True),
-        volume_type                  = dict(default=None),
-        display_name                 = dict(required=True),
-        display_description          = dict(default=None),
-        image_id                     = dict(default=None),
-        image_name                   = dict(default=None),
-        snapshot_id                  = dict(default=None),
-        wait                         = dict(default=False, choices=[True, False]),
-        timeout                      = dict(default=180)
+    argument_spec = spec.openstack_argument_spec(
+        size=dict(required=True),
+        volume_type=dict(default=None),
+        display_name=dict(required=True),
+        display_description=dict(default=None),
+        image_id=dict(default=None),
+        image_name=dict(default=None),
+        snapshot_id=dict(default=None),
+        wait=dict(default=False, choices=[True, False]),
+        timeout=dict(default=180),
+        state=dict(default='present', choices=['absent', 'present']),
     )
     module_kwargs = spec.openstack_module_kwargs(
         mutually_exclusive = [

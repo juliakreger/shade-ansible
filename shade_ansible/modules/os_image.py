@@ -142,7 +142,7 @@ def _glance_delete_image(module, params, client):
 
 def main():
 
-    argument_spec = openstack_argument_spec(
+    argument_spec = spec.openstack_argument_spec(
         name              = dict(required=True),
         disk_format       = dict(default='qcow2', choices=['aki', 'vhd', 'vmdk', 'raw', 'qcow2', 'vdi', 'iso']),
         container_format  = dict(default='bare', choices=['aki', 'ari', 'bare', 'ovf']),
