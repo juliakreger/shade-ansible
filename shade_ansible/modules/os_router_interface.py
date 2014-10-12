@@ -124,7 +124,6 @@ def main():
     argument_spec = openstack_argument_spec(
         router_name                     = dict(required=True),
         subnet_name                     = dict(required=True),
-        state                           = dict(default='present', choices=['absent', 'present']),
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)

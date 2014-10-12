@@ -165,7 +165,6 @@ def main():
         network_name                    = dict(required=True),
         instance_name                   = dict(required=True),
         internal_network_name           = dict(default=None),
-        state                           = dict(default='present', choices=['absent', 'present']),
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)

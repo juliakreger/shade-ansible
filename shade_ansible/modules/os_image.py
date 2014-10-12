@@ -114,7 +114,7 @@ def _glance_image_create(module, params, client):
                 'copy_from':        params.get('copy_from'),
     }
     try:
-        timeout = float(params.get('timeout'))
+        timeout = params.get('timeout')
         expire = time.time() + timeout
         image = client.images.create(**kwargs)
         if not params['copy_from']:
@@ -153,9 +153,7 @@ def main():
         min_ram           = dict(default=None),
         is_public         = dict(default=True),
         copy_from         = dict(default= None),
-        timeout           = dict(default=180),
         file              = dict(default=None),
-        state             = dict(default='present', choices=['absent', 'present'])
     )
     module_kwargs = spec.openstack_module_kwargs(
         mutually_exclusive = [['file','copy_from']],

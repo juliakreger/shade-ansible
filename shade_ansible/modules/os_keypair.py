@@ -68,7 +68,6 @@ def main():
     argument_spec = spec.openstack_argument_spec(
         name=dict(required=True),
         public_key=dict(default=None),
-        state=dict(default='present', choices=['absent', 'present'])
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)

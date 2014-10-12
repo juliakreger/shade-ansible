@@ -178,14 +178,11 @@ def _absent_volume(nova, cinder, module):
 
 def main():
     argument_spec = spec.openstack_argument_spec(
-        server_id= dict(default=None),
-        server_name= dict(default=None),
+        server_id=dict(default=None),
+        server_name=dict(default=None),
         volume_id=dict(default=None),
         volume_name=dict(default=None),
         device=dict(default=None),
-        state=dict(default='present', choices=['absent', 'present']),
-        wait=dict(default=False, choices=[True, False]),
-        timeout=dict(default=180)
     )
     module_kwargs = spec.openstack_module_kwargs(
         mutually_exclusive=[

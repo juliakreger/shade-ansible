@@ -24,6 +24,9 @@ def openstack_argument_spec(**kwargs):
         availability_zone=dict(default=None),
         user_domain_name=dict(default=None),
         project_domain_name=dict(default=None),
+        state=dict(default='present', choices=['absent', 'present']),
+        wait=dict(default=True, type='bool'),
+        timeout=dict(default=180, type='float'),
         endpoint_type=dict(
             default='publicURL', choices=['publicURL', 'internalURL']
         )

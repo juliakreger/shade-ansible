@@ -171,7 +171,6 @@ def main():
         name                    = dict(required=True),
         network_name            = dict(required=True),
         cidr                    = dict(required=True),
-        state                   = dict(default='present', choices=['absent', 'present']),
         ip_version              = dict(default='4', choices=['4', '6']),
         enable_dhcp             = dict(default='true', type='bool'),
         gateway_ip              = dict(default=None),

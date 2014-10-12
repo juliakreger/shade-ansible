@@ -117,7 +117,7 @@ options:
         - If the module should wait for the instance to be created.
      required: false
      default: 'yes'
-   wait_for:
+   timeout:
      description:
         - The amount of time the module should wait for the instance to get into active state
      required: false
@@ -145,7 +145,7 @@ EXAMPLES = '''
        name: vm1
        image_id: 4f905f38-e52a-43d2-b6ec-754a13ffb529
        key_name: ansible_key
-       wait_for: 200
+       timeout: 200
        flavor_id: 4
        nics:
          - net-id: 34605f38-e52a-25d2-b6ec-754a13ffb723
@@ -169,7 +169,7 @@ EXAMPLES = '''
       availability_zone: az2
       image_id: 9302692b-b787-4b52-a3a6-daebb79cb498
       key_name: test
-      wait_for: 200
+      timeout: 200
       flavor_id: 101
       security_groups: default
       auto_floating_ip: yes
@@ -190,7 +190,7 @@ EXAMPLES = '''
       availability_zone: az2
       image_id: 9302692b-b787-4b52-a3a6-daebb79cb498
       key_name: test
-      wait_for: 200
+      timeout: 200
       flavor_id: 101
       floating-ips:
         - 12.34.56.79
@@ -244,7 +244,7 @@ def _delete_server(module, nova):
         module.fail_json( msg = "Error in deleting vm: %s" % e.message)
     if module.params['wait'] == 'no':
         module.exit_json(changed = True, result = "deleted")
-    expire = time.time() + int(module.params['wait_for'])
+    expire = time.time() + module.params['timeout']
     while time.time() < expire:
         name = nova.servers.list(True, {'name': module.params['name']})
         if not name:
@@ -395,7 +395,7 @@ def _create_server(module, cloud, nova):
     except Exception, e:
             module.fail_json( msg = "Error in creating instance: %s " % e.message)
     if module.params['wait'] == 'yes':
-        expire = time.time() + int(module.params['wait_for'])
+        expire = time.time() + module.params['timeout']
         while time.time() < expire:
             try:
                 server = nova.servers.get(server.id)
@@ -498,9 +498,6 @@ def main():
         security_groups                 = dict(default='default'),
         nics                            = dict(default=None),
         meta                            = dict(default=None),
-        wait                            = dict(default='yes', choices=['yes', 'no']),
-        wait_for                        = dict(default=180),
-        state                           = dict(default='present', choices=['absent', 'present']),
         user_data                       = dict(default=None),
         config_drive                    = dict(default=False, type='bool'),
         auto_floating_ip                = dict(default=False, type='bool'),

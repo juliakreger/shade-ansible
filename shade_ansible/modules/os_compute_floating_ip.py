@@ -119,7 +119,6 @@ def main():
     argument_spec = spec.openstack_argument_spec(
         ip_address                      = dict(required=True),
         instance_name                   = dict(required=True),
-        state                           = dict(default='present', choices=['absent', 'present'])
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)

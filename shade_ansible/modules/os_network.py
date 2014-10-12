@@ -177,7 +177,6 @@ def main():
         router_external                 = dict(default=False, type='bool'),
         shared                          = dict(default=False, type='bool'),
         admin_state_up                  = dict(default=True, type='bool'),
-        state                           = dict(default='present', choices=['absent', 'present'])
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)

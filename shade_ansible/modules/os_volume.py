@@ -116,7 +116,7 @@ def _present_volume(module, cinder, cloud):
         module.fail_json(msg='Error creating volume:%s' % str(e))
 
     if module.params['wait']:
-        expires = float(module.params['timeout']) + time.time()
+        expires = module.params['timeout'] + time.time()
         while time.time() < expires:
             volume = cinder.volumes.get(vol.id)
             if volume.status == 'available':
@@ -128,7 +128,7 @@ def _present_volume(module, cinder, cloud):
 
 
 def _wait_for_delete(cinder, vol_id, timeout):
-    expires = float(timeout) + time.time()
+    expires = timeout + time.time()
     while time.time() < expires:
         try:
             cinder.volumes.get(vol_id)
@@ -162,9 +162,6 @@ def main():
         image_id=dict(default=None),
         image_name=dict(default=None),
         snapshot_id=dict(default=None),
-        wait=dict(default=False, choices=[True, False]),
-        timeout=dict(default=180),
-        state=dict(default='present', choices=['absent', 'present']),
     )
     module_kwargs = spec.openstack_module_kwargs(
         mutually_exclusive = [
