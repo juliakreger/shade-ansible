@@ -76,81 +76,110 @@ class NovaInventory(object):
         with open(self.cache_file, 'w') as cache_file:
             cache_file.write(self.json_format_dict(groups))
 
+    def _get_groups_from_server(self, cloud, server, server_vars):
+        groups = []
+
+        region = cloud.region
+        cloud_name = cloud.name
+
+        # Create a group for the cloud
+        groups.append(cloud_name)
+
+        # Create a group on region
+        groups.append(region)
+
+        # And one by cloud_region
+        groups.append("%s_%s" % (cloud_name, region))
+
+        # Check if group metadata key in servers' metadata
+        group = server.metadata.get('group')
+        if group:
+            groups.append(group)
+
+        for extra_group in server.metadata.get('groups', '').split(','):
+            if extra_group:
+                groups.append(extra_group)
+
+        groups.append('instance-%s' % server.id)
+
+        flavor_id = server.flavor['id']
+        groups.append('flavor-%s' % flavor_id)
+        flavor_name = cloud.get_flavor_name(flavor_id)
+        if flavor_name:
+            groups.append('flavor-%s' % flavor_name)
+
+        image_id = server.image['id']
+        groups.append('image-%s' % image_id)
+        image_name = cloud.get_image_name(image_id)
+        if image_name:
+            groups.append('image-%s' % image_name)
+
+        for key, value in server.metadata.iteritems():
+            groups.append('meta_%s_%s' % (key, value))
+
+        az = server_vars.get('az', None)
+        if az:
+            # Make groups for az, region_az and cloud_region_az
+            groups.append(az)
+            groups.append('%s_%s' % (region, az))
+            groups.append('%s_%s_%s' % (cloud.name, region, az))
+        return groups
+
+    def _get_hostvars_from_server(self, cloud, server):
+        server_vars = dict()
+        # Fist, add an IP address
+        if (cloud.private):
+            interface_ips = shade.find_nova_addresses(
+                getattr(server, 'addresses'), 'fixed', 'private')
+        else:
+            interface_ips = shade.find_nova_addresses(
+                getattr(server, 'addresses'), 'floating', 'public')
+        # TODO: I want this to be richer
+        server_vars['interface_ip'] = interface_ips[0]
+
+        server_vars.update(to_dict(server))
+
+        server_vars['nova_region'] = cloud.region
+        server_vars['openstack_cloud'] = cloud.name
+
+        server_vars['cinder_volumes'] = [
+            to_dict(f, slug=False) for f in cloud.get_volumes(server)]
+
+        az = server_vars.get('nova_os-ext-az_availability_zone', None)
+        if az:
+            server_vars['nova_az'] = az
+
+        return server_vars
+
+    def _get_server_meta(self, cloud, server):
+        server_vars = self._get_hostvars_from_server(cloud, server)
+        groups = self._get_groups_from_server(cloud, server, server_vars)
+        return dict(server_vars=server_vars, groups=groups)
+
     def get_host_groups_from_cloud(self):
         groups = collections.defaultdict(list)
         hostvars = collections.defaultdict(dict)
 
         for cloud in self.clouds:
-            region = cloud.region
-            cloud_name = cloud.name
 
             # Cycle on servers
             for server in cloud.list_servers():
-                # loop through the networks for this instance, append fixed
-                # and floating IPs in a list
 
-                # Fist, add an IP address
-                if (cloud.private):
-                    ansible_ssh_hosts = shade.find_nova_addresses(getattr(server, 'addresses'), 'fixed', 'private')
-                else:
-                    ansible_ssh_hosts = shade.find_nova_addresses(getattr(server, 'addresses'), 'floating', 'public')
-                if not ansible_ssh_hosts:
+                meta = self._get_server_meta(cloud, server)
+
+                if 'interface_ip' not in meta['server_vars']:
                     # skip this host if it doesn't have a network address
                     continue
-                hostvars[server.name]['ansible_ssh_host'] = ansible_ssh_hosts[0]
 
-                # Create a group for the cloud
-                groups[cloud_name].append(server.name)
+                server_vars = meta['server_vars']
+                server_vars['ansible_ssh_host'] = server_vars['interface_ip']
+                hostvars[server.name] = server_vars
 
-                # Create a group on region
-                groups[region].append(server.name)
-
-                # And one by cloud_region
-                groups["%s_%s" % (cloud_name, region)].append(server.name)
-
-                # Check if group metadata key in servers' metadata
-                group = server.metadata.get('group')
-                if group:
+                for group in meta['groups']:
                     groups[group].append(server.name)
 
-                for extra_group in server.metadata.get('groups', '').split(','):
-                    if extra_group:
-                        groups[extra_group].append(server.name)
-
-                for key, value in to_dict(server).items():
-                    hostvars[server.name][key] = value
-
-                az = hostvars[server.name].get('nova_os-ext-az_availability_zone', None)
-                if az:
-                    hostvars[server.name]['nova_az'] = az
-                    # Make groups for az, region_az and cloud_region_az
-                    groups[az].append(server.name)
-                    groups['%s_%s' % (region, az)].append(server.name)
-                    groups['%s_%s_%s' % (cloud_name, region, az)].append(server.name)
-
-                hostvars[server.name]['nova_region'] = region
-                hostvars[server.name]['openstack_cloud'] = cloud_name
-                hostvars[server.name]['cinder_volumes'] = [
-                    to_dict(f, slug=False) for f in cloud.get_volumes(server)]
-
-                for key, value in server.metadata.iteritems():
-                    prefix = os.getenv('OS_META_PREFIX', 'meta')
-                    groups['%s_%s_%s' % (prefix, key, value)].append(server.name)
-
-                groups['instance-%s' % server.id].append(server.name)
-                
-                groups['flavor-%s' % server.flavor['id']].append(server.name)
-                flavor_name = cloud.get_flavor_name(server.flavor['id'])
-                if flavor_name:
-                    groups['flavor-%s' % flavor_name].append(server.name)
-
-                groups['image-%s' % server.image['id']].append(server.name)
-                image_name = cloud.get_image_name(server.image['id'])
-                if image_name:
-                    groups['image-%s' % image_name].append(server.name)
-
-            if hostvars:
-                groups['_meta'] = {'hostvars': hostvars}
+        if hostvars:
+            groups['_meta'] = {'hostvars': hostvars}
         return groups
 
     def json_format_dict(self, data):
