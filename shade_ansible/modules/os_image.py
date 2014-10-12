@@ -16,18 +16,20 @@
 # You should have received a copy of the GNU General Public License
 # along with this software.  If not, see <http://www.gnu.org/licenses/>.
 
-import shade
-from shade_ansible import spec
+try:
+    import shade
+    from shade_ansible import spec
+except ImportError:
+    print("failed=True msg='shade is required for this module'")
 
 
 DOCUMENTATION = '''
 ---
 module: os_image
-version_added: "1.2"
-short_description: Add/Delete images from glance
+short_description: Add/Delete images from OpenStack Cloud
 extends_documentation_fragment: openstack
 description:
-   - Add or Remove images from the glance repository.
+   - Add or Remove images from the OpenStack Image Repository
 options:
    state:
      description:
@@ -84,7 +86,7 @@ options:
         - The path to the file which has to be uploaded, mutually exclusive with copy_from
      required: false
      default: None
-requirements: ["glanceclient", "keystoneclient"]
+requirements: ["shade"]
 '''
 
 EXAMPLES = '''

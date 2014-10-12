@@ -17,16 +17,16 @@
 # along with this software.  If not, see <http://www.gnu.org/licenses/>.
 
 try:
-    from neutronclient.neutron import client
-    from keystoneclient.v2_0 import client as ksclient
+    import shade
+    from shade_ansible import spec
 except ImportError:
-    print("failed=True msg='neutronclient and keystone client are required'")
+    print("failed=True msg='shade is required for this module'")
+
 
 DOCUMENTATION = '''
 ---
 module: os_router
-version_added: "1.2"
-short_description: Create or Remove router from openstack
+short_description: Create or Delete routers from PpenStack
 extends_documentation_fragment: openstack
 description:
    - Create or Delete routers from OpenStack
@@ -40,85 +40,26 @@ options:
      description:
         - Name to be give to the router
      required: true
-     default: None
-   tenant_name:
-     description:
-        - Name of the tenant for which the router has to be created, if none router would be created for the login tenant.
-     required: false
-     default: None
    admin_state_up:
      description:
         - desired admin state of the created router .
      required: false
      default: true
-requirements: ["neutronclient", "keystoneclient"]
+requirements: ["shade"]
 '''
 
 EXAMPLES = '''
 # Creates a router for tenant admin
 - os_router: state=present
-             login_username=admin
-             login_password=admin
-             login_tenant_name=admin
+             username=admin
+             password=admin
+             project_name=admin
              name=router1"
 '''
-
-_os_keystone = None
-_os_tenant_id = None
-
-def _get_ksclient(module, kwargs):
-    try:
-        kclient = ksclient.Client(username=kwargs.get('login_username'),
-                                 password=kwargs.get('login_password'),
-                                 tenant_name=kwargs.get('login_tenant_name'),
-                                 auth_url=kwargs.get('auth_url'))
-    except Exception, e:
-        module.fail_json(msg = "Error authenticating to the keystone: %s " % e.message)
-    global _os_keystone
-    _os_keystone = kclient
-    return kclient
-
-
-def _get_endpoint(module, ksclient):
-    try:
-        endpoint = ksclient.service_catalog.url_for(service_type='network', endpoint_type='publicURL')
-    except Exception, e:
-        module.fail_json(msg = "Error getting network endpoint: %s" % e.message)
-    return endpoint
-
-def _get_neutron_client(module, kwargs):
-    _ksclient = _get_ksclient(module, kwargs)
-    token = _ksclient.auth_token
-    endpoint = _get_endpoint(module, _ksclient)
-    kwargs = {
-            'token': token,
-            'endpoint_url': endpoint
-    }
-    try:
-        neutron = client.Client('2.0', **kwargs)
-    except Exception, e:
-        module.fail_json(msg = "Error in connecting to neutron: %s " % e.message)
-    return neutron
-
-def _set_tenant_id(module):
-    global _os_tenant_id
-    if not module.params['tenant_name']:
-        login_tenant_name = module.params['login_tenant_name']
-    else:
-        login_tenant_name = module.params['tenant_name']
-
-    for tenant in _os_keystone.tenants.list():
-        if tenant.name == login_tenant_name:
-            _os_tenant_id = tenant.id
-            break
-    if not _os_tenant_id:
-            module.fail_json(msg = "The tenant id cannot be found, please check the parameters")
-
 
 def _get_router_id(module, neutron):
     kwargs = {
             'name': module.params['name'],
-            'tenant_id': _os_tenant_id,
     }
     try:
         routers = neutron.list_routers(**kwargs)
@@ -131,7 +72,6 @@ def _get_router_id(module, neutron):
 def _create_router(module, neutron):
     router = {
             'name': module.params['name'],
-            'tenant_id': _os_tenant_id,
             'admin_state_up': module.params['admin_state_up'],
     }
     try:
@@ -148,36 +88,38 @@ def _delete_router(module, neutron, router_id):
     return True
 
 def main():
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
+    argument_spec = openstack_argument_spec(
         name                            = dict(required=True),
-        tenant_name                     = dict(default=None),
         state                           = dict(default='present', choices=['absent', 'present']),
         admin_state_up                  = dict(type='bool', default=True),
-    ))
-    module = AnsibleModule(argument_spec=argument_spec)
+    )
+    module_kwargs = spec.openstack_module_kwargs()
+    module = AnsibleModule(argument_spec, **module_kwargs)
 
-    neutron = _get_neutron_client(module, module.params)
-    _set_tenant_id(module)
+    try:
+        cloud = shade.openstack_cloud(**module.params)
+        neutron = cloud.neutron_client
 
-    if module.params['state'] == 'present':
-        router_id = _get_router_id(module, neutron)
-        if not router_id:
-            router_id = _create_router(module, neutron)
-            module.exit_json(changed=True, result="Created", id=router_id)
+
+        if module.params['state'] == 'present':
+            router_id = _get_router_id(module, neutron)
+            if not router_id:
+                router_id = _create_router(module, neutron)
+                module.exit_json(changed=True, result="Created", id=router_id)
+            else:
+                module.exit_json(changed=False, result="success" , id=router_id)
+
         else:
-            module.exit_json(changed=False, result="success" , id=router_id)
-
-    else:
-        router_id = _get_router_id(module, neutron)
-        if not router_id:
-            module.exit_json(changed=False, result="success")
-        else:
-            _delete_router(module, neutron, router_id)
-            module.exit_json(changed=True, result="deleted")
+            router_id = _get_router_id(module, neutron)
+            if not router_id:
+                module.exit_json(changed=False, result="success")
+            else:
+                _delete_router(module, neutron, router_id)
+                module.exit_json(changed=True, result="deleted")
+    except shade.OpenStackCloudException as e:
+        module.fail_json(msg=e.message)
 
 # this is magic, see lib/ansible/module_common.py
 from ansible.module_utils.basic import *
 from ansible.module_utils.openstack import *
 main()
-

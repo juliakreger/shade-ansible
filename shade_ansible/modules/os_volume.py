@@ -13,20 +13,21 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this software.  If not, see <http://www.gnu.org/licenses/>.
+
 import time
 
 try:
-    from cinderclient import exceptions as cinder_exc
+    from shade_ansible import spec
+    import shade
 except ImportError:
-    print("failed=True msg='cinderclient is required for this module'")
+    print("failed=True msg='shade is required for this module'")
 
-from shade_ansible import spec
-import shade
+from cinderclient import exceptions as cinder_exc
+
 
 DOCUMENTATION = '''
 ---
 module: os_volume
-version_added: "1.8"
 short_description: Create/Delete Cinder Volumes
 extends_documentation_fragment: openstack
 description:
@@ -72,7 +73,7 @@ options:
        - Volume snapshot id to create from
      required: false
      default: None
-requirements: ["cinderclient"]
+requirements: ["shade"]
 '''
 
 EXAMPLES = '''

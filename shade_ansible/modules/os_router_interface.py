@@ -17,14 +17,14 @@
 # along with this software.  If not, see <http://www.gnu.org/licenses/>.
 
 try:
-    from neutronclient.neutron import client
-    from keystoneclient.v2_0 import client as ksclient
+    import shade
+    from shade_ansible import spec
 except ImportError:
-    print("failed=True msg='neutronclient and keystoneclient are required'")
+    print("failed=True msg='shade is required for this module'")
+
 DOCUMENTATION = '''
 ---
 module: os_router_interface
-version_added: "1.2"
 short_description: Attach/Dettach a subnet's interface to a router
 extends_documentation_fragment: openstack
 description:
@@ -45,75 +45,17 @@ options:
         - Name of the subnet to whose interface should be attached to the router.
      required: true
      default: None
-   tenant_name:
-     description:
-        - Name of the tenant whose subnet has to be attached.
-     required: false
-     default: None
-requirements: ["neutronclient", "keystoneclient"]
+requirements: ["shade"]
 '''
 
 EXAMPLES = '''
-# Attach tenant1's subnet to the external router
-- os_router_interface: state=present login_username=admin
-                       login_password=admin
-                       login_tenant_name=admin
-                       tenant_name=tenant1
+# Attach subnet t1subnet to the external router external_route
+- os_router_interface: state=present username=admin
+                       password=admin
+                       project_name=admin
                        router_name=external_route
                        subnet_name=t1subnet
 '''
-
-
-_os_keystone = None
-_os_tenant_id = None
-
-def _get_ksclient(module, kwargs):
-    try:
-        kclient = ksclient.Client(username=kwargs.get('login_username'),
-                                 password=kwargs.get('login_password'),
-                                 tenant_name=kwargs.get('login_tenant_name'),
-                                 auth_url=kwargs.get('auth_url'))
-    except Exception, e:
-        module.fail_json(msg = "Error authenticating to the keystone: %s " % e.message)
-    global _os_keystone
-    _os_keystone = kclient
-    return kclient
-
-
-def _get_endpoint(module, ksclient):
-    try:
-        endpoint = ksclient.service_catalog.url_for(service_type='network', endpoint_type='publicURL')
-    except Exception, e:
-        module.fail_json(msg = "Error getting network endpoint: %s" % e.message)
-    return endpoint
-
-def _get_neutron_client(module, kwargs):
-    _ksclient = _get_ksclient(module, kwargs)
-    token = _ksclient.auth_token
-    endpoint = _get_endpoint(module, _ksclient)
-    kwargs = {
-            'token': token,
-            'endpoint_url': endpoint
-    }
-    try:
-        neutron = client.Client('2.0', **kwargs)
-    except Exception, e:
-        module.fail_json(msg = "Error in connecting to neutron: %s " % e.message)
-    return neutron
-
-def _set_tenant_id(module):
-    global _os_tenant_id
-    if not module.params['tenant_name']:
-        login_tenant_name = module.params['login_tenant_name']
-    else:
-        login_tenant_name = module.params['tenant_name']
-
-    for tenant in _os_keystone.tenants.list():
-        if tenant.name == login_tenant_name:
-            _os_tenant_id = tenant.id
-            break
-    if not _os_tenant_id:
-        module.fail_json(msg = "The tenant id cannot be found, please check the parameters")
 
 
 def _get_router_id(module, neutron):
@@ -132,7 +74,6 @@ def _get_router_id(module, neutron):
 def _get_subnet_id(module, neutron):
     subnet_id = None
     kwargs = {
-            'tenant_id': _os_tenant_id,
             'name': module.params['subnet_name'],
     }
     try:
@@ -145,7 +86,6 @@ def _get_subnet_id(module, neutron):
 
 def _get_port_id(neutron, module, router_id, subnet_id):
     kwargs = {
-            'tenant_id': _os_tenant_id,
             'device_id': router_id,
     }
     try:
@@ -181,39 +121,42 @@ def  _remove_interface_router(neutron, module, router_id, subnet_id):
     return True
 
 def main():
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
-            router_name                     = dict(required=True),
-            subnet_name                     = dict(required=True),
-            tenant_name                     = dict(default=None),
-            state                           = dict(default='present', choices=['absent', 'present']),
-    ))
-    module = AnsibleModule(argument_spec=argument_spec)
+    argument_spec = openstack_argument_spec(
+        router_name                     = dict(required=True),
+        subnet_name                     = dict(required=True),
+        state                           = dict(default='present', choices=['absent', 'present']),
+    )
+    module_kwargs = spec.openstack_module_kwargs()
+    module = AnsibleModule(argument_spec, **module_kwargs)
 
-    neutron = _get_neutron_client(module, module.params)
-    _set_tenant_id(module)
+    try:
+        cloud = shade.openstack_cloud(**module.params)
+        neutron = cloud.neutron_client
 
-    router_id = _get_router_id(module, neutron)
-    if not router_id:
-        module.fail_json(msg="failed to get the router id, please check the router name")
+        router_id = _get_router_id(module, neutron)
+        if not router_id:
+            module.fail_json(msg="failed to get the router id, please check the router name")
 
-    subnet_id = _get_subnet_id(module, neutron)
-    if not subnet_id:
-        module.fail_json(msg="failed to get the subnet id, please check the subnet name")
+        subnet_id = _get_subnet_id(module, neutron)
+        if not subnet_id:
+            module.fail_json(msg="failed to get the subnet id, please check the subnet name")
 
-    if module.params['state'] == 'present':
-        port_id = _get_port_id(neutron, module, router_id, subnet_id)
-        if not port_id:
-            _add_interface_router(neutron, module, router_id, subnet_id)
-            module.exit_json(changed=True, result="created", id=port_id)
-        module.exit_json(changed=False, result="success", id=port_id)
+        if module.params['state'] == 'present':
+            port_id = _get_port_id(neutron, module, router_id, subnet_id)
+            if not port_id:
+                _add_interface_router(neutron, module, router_id, subnet_id)
+                module.exit_json(changed=True, result="created", id=port_id)
+            module.exit_json(changed=False, result="success", id=port_id)
 
-    if module.params['state'] == 'absent':
-        port_id = _get_port_id(neutron, module, router_id, subnet_id)
-        if not port_id:
-            module.exit_json(changed = False, result = "Success")
-        _remove_interface_router(neutron, module, router_id, subnet_id)
-        module.exit_json(changed=True, result="Deleted")
+        if module.params['state'] == 'absent':
+            port_id = _get_port_id(neutron, module, router_id, subnet_id)
+            if not port_id:
+                module.exit_json(changed = False, result = "Success")
+            _remove_interface_router(neutron, module, router_id, subnet_id)
+            module.exit_json(changed=True, result="Deleted")
+    except shade.OpenStackCloudException as e:
+        module.fail_json(msg=e.message)
+
 
 # this is magic, see lib/ansible/module_common.py
 from ansible.module_utils.basic import *

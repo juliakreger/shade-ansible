@@ -16,18 +16,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this software.  If not, see <http://www.gnu.org/licenses/>.
 
+import time
+
 try:
-    from novaclient.v1_1 import client as nova_client
-    from neutronclient.neutron import client
-    from keystoneclient.v2_0 import client as ksclient
-    import time
+    import shade
+    from shade_ansible import spec
 except ImportError:
-    print("failed=True msg='novaclient, keystoneclient and neutronclient are required'")
+    print("failed=True msg='shade is required'")
 
 DOCUMENTATION = '''
 ---
 module: os_floating_ip
-version_added: "1.2"
 short_description: Add/Remove floating IP from an instance
 extends_documentation_fragment: openstack
 description:
@@ -53,50 +52,16 @@ options:
         - The name of the network of the port to associate with the floating ip. Necessary when VM multiple networks.
      required: false
      default: None
-     version_added: "1.5"
-requirements: ["novaclient", "neutronclient", "keystoneclient"]
+requirements: ["shade"]
 '''
 
 EXAMPLES = '''
 # Assign a floating ip to the instance from an external network
-- os_floating_ip: state=present login_username=admin login_password=admin
-                  login_tenant_name=admin network_name=external_network
+- os_floating_ip: state=present username=admin password=admin
+                  project_name=admin network_name=external_network
                   instance_name=vm1 internal_network_name=internal_network
 '''
 
-def _get_ksclient(module, kwargs):
-    try:
-        kclient = ksclient.Client(username=kwargs.get('login_username'),
-                                 password=kwargs.get('login_password'),
-                                 tenant_name=kwargs.get('login_tenant_name'),
-                                 auth_url=kwargs.get('auth_url'))
-    except Exception, e:
-        module.fail_json(msg = "Error authenticating to the keystone: %s " % e.message)
-    global _os_keystone
-    _os_keystone = kclient
-    return kclient
-
-
-def _get_endpoint(module, ksclient):
-    try:
-        endpoint = ksclient.service_catalog.url_for(service_type='network', endpoint_type='publicURL')
-    except Exception, e:
-        module.fail_json(msg = "Error getting network endpoint: %s" % e.message)
-    return endpoint
-
-def _get_neutron_client(module, kwargs):
-    _ksclient = _get_ksclient(module, kwargs)
-    token = _ksclient.auth_token
-    endpoint = _get_endpoint(module, _ksclient)
-    kwargs = {
-            'token': token,
-            'endpoint_url': endpoint
-    }
-    try:
-        neutron = client.Client('2.0', **kwargs)
-    except Exception, e:
-        module.fail_json(msg = "Error in connecting to neutron: %s " % e.message)
-    return neutron
 
 def _get_server_state(module, nova):
     server_info = None
@@ -113,6 +78,7 @@ def _get_server_state(module, nova):
     except Exception, e:
         module.fail_json(msg = "Error in getting the server list: %s" % e.message)
     return server_info, server
+
 
 def _get_port_info(neutron, module, instance_id, internal_network_name=None):
     subnet_id = None
@@ -144,6 +110,7 @@ def _get_port_info(neutron, module, instance_id, internal_network_name=None):
         return None, None
     return fixed_ip_address, port_id
 
+
 def _get_floating_ip(module, neutron, fixed_ip_address):
     kwargs = {
             'fixed_ip_address': fixed_ip_address
@@ -155,6 +122,7 @@ def _get_floating_ip(module, neutron, fixed_ip_address):
     if not ips['floatingips']:
         return None, None
     return ips['floatingips'][0]['id'], ips['floatingips'][0]['floating_ip_address']
+
 
 def _create_floating_ip(neutron, module, port_id, net_id, fixed_ip):
     kwargs = {
@@ -193,44 +161,48 @@ def _update_floating_ip(neutron, module, port_id, floating_ip_id):
 
 def main():
 
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
-            network_name                    = dict(required=True),
-            instance_name                   = dict(required=True),
-            state                           = dict(default='present', choices=['absent', 'present']),
-            internal_network_name           = dict(default=None),
-    ))
-    module = AnsibleModule(argument_spec=argument_spec)
+    argument_spec = spec.openstack_argument_spec(
+        network_name                    = dict(required=True),
+        instance_name                   = dict(required=True),
+        internal_network_name           = dict(default=None),
+        state                           = dict(default='present', choices=['absent', 'present']),
+    )
+    module_kwargs = spec.openstack_module_kwargs()
+    module = AnsibleModule(argument_spec, **module_kwargs)
 
     try:
-        nova = nova_client.Client(module.params['login_username'], module.params['login_password'],
-            module.params['login_tenant_name'], module.params['auth_url'], service_type='compute')
-        neutron = _get_neutron_client(module, module.params)
-    except Exception, e:
-        module.fail_json(msg="Error in authenticating to nova: %s" % e.message)
+        cloud = shade.openstack_cloud(**module.params)
+        nova = cloud.nova_client
+        neutron = cloud.neutron_client
 
-    server_info, server_obj = _get_server_state(module, nova)
-    if not server_info:
-        module.fail_json(msg="The instance name provided cannot be found")
+        server_info, server_obj = _get_server_state(module, nova)
+        if not server_info:
+            module.fail_json(msg="The instance name provided cannot be found")
 
-    fixed_ip, port_id = _get_port_info(neutron, module, server_info['id'], module.params['internal_network_name'])
-    if not port_id:
-        module.fail_json(msg="Cannot find a port for this instance, maybe fixed ip is not assigned")
+        fixed_ip, port_id = _get_port_info(
+            neutron, module, server_info['id'],
+            module.params['internal_network_name'])
+        if not port_id:
+            module.fail_json(
+                msg="Cannot find a port for this instance,"
+                    " maybe fixed ip is not assigned")
 
-    floating_id, floating_ip = _get_floating_ip(module, neutron, fixed_ip)
+        floating_id, floating_ip = _get_floating_ip(module, neutron, fixed_ip)
 
-    if module.params['state'] == 'present':
-        if floating_ip:
-            module.exit_json(changed = False, public_ip=floating_ip)
-        net_id = _get_net_id(neutron, module)
-        if not net_id:
-            module.fail_json(msg = "cannot find the network specified, please check")
-        _create_floating_ip(neutron, module, port_id, net_id, fixed_ip)
+        if module.params['state'] == 'present':
+            if floating_ip:
+                module.exit_json(changed = False, public_ip=floating_ip)
+            net_id = _get_net_id(neutron, module)
+            if not net_id:
+                module.fail_json(msg = "cannot find the network specified, please check")
+            _create_floating_ip(neutron, module, port_id, net_id, fixed_ip)
 
-    if module.params['state'] == 'absent':
-        if floating_ip:
-            _update_floating_ip(neutron, module, None, floating_id)
-        module.exit_json(changed=False)
+        if module.params['state'] == 'absent':
+            if floating_ip:
+                _update_floating_ip(neutron, module, None, floating_id)
+            module.exit_json(changed=False)
+    except shade.OpenStackCloudException as e:
+        module.fail_json(msg=e.message)
 
 # this is magic, see lib/ansible/module_common.py
 from ansible.module_utils.basic import *

@@ -17,15 +17,15 @@
 # along with this software.  If not, see <http://www.gnu.org/licenses/>.
 
 try:
-    from neutronclient.neutron import client
-    from keystoneclient.v2_0 import client as ksclient
+    import shade
+    from shade_ansible import spec
 except ImportError:
-    print("failed=True msg='neutronclient and keystoneclient are required'")
+    print("failed=True msg='shade is required for this module'")
+
 
 DOCUMENTATION = '''
 ---
 module: os_router_gateway
-version_added: "1.2"
 short_description: set/unset a gateway interface for the router with the specified external network
 extends_documentation_fragment: openstack
 description:
@@ -46,50 +46,16 @@ options:
         - Name of the external network which should be attached to the router.
      required: true
      default: None
-requirements: ["neutronclient", "keystoneclient"]
+requirements: ["shade"]
 '''
 
 EXAMPLES = '''
 # Attach an external network with a router to allow flow of external traffic
-- os_router_gateway: state=present login_username=admin login_password=admin
-                     login_tenant_name=admin router_name=external_router
+- os_router_gateway: state=present username=admin password=admin
+                     project_name=admin router_name=external_router
                      network_name=external_network
 '''
 
-_os_keystone = None
-def _get_ksclient(module, kwargs):
-    try:
-        kclient = ksclient.Client(username=kwargs.get('login_username'),
-                                 password=kwargs.get('login_password'),
-                                 tenant_name=kwargs.get('login_tenant_name'),
-                                 auth_url=kwargs.get('auth_url'))
-    except Exception, e:
-        module.fail_json(msg = "Error authenticating to the keystone: %s " % e.message)
-    global _os_keystone
-    _os_keystone = kclient
-    return kclient
-
-
-def _get_endpoint(module, ksclient):
-    try:
-        endpoint = ksclient.service_catalog.url_for(service_type='network', endpoint_type='publicURL')
-    except Exception, e:
-        module.fail_json(msg = "Error getting network endpoint: %s" % e.message)
-    return endpoint
-
-def _get_neutron_client(module, kwargs):
-    _ksclient = _get_ksclient(module, kwargs)
-    token = _ksclient.auth_token
-    endpoint = _get_endpoint(module, _ksclient)
-    kwargs = {
-            'token': token,
-            'endpoint_url': endpoint
-    }
-    try:
-        neutron = client.Client('2.0', **kwargs)
-    except Exception, e:
-        module.fail_json(msg = "Error in connecting to neutron: %s " % e.message)
-    return neutron
 
 def _get_router_id(module, neutron):
     kwargs = {
@@ -148,37 +114,42 @@ def  _remove_gateway_router(neutron, module, router_id):
 
 def main():
 
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
-            router_name        = dict(required=True),
-            network_name       = dict(required=True),
-            state              = dict(default='present', choices=['absent', 'present']),
-    ))
-    module = AnsibleModule(argument_spec=argument_spec)
+    argument_spec = openstack_argument_spec(
+        router_name        = dict(required=True),
+        network_name       = dict(required=True),
+        state              = dict(default='present', choices=['absent', 'present']),
+    )
+    module_kwargs = spec.openstack_module_kwargs()
+    module = AnsibleModule(argument_spec, **module_kwargs)
 
-    neutron = _get_neutron_client(module, module.params)
-    router_id = _get_router_id(module, neutron)
+    try:
+        cloud = shade.openstack_cloud(**module.params)
+        neutron = cloud.neutron_client
 
-    if not router_id:
-        module.fail_json(msg="failed to get the router id, please check the router name")
+        router_id = _get_router_id(module, neutron)
 
-    network_id = _get_net_id(neutron, module)
-    if not network_id:
-        module.fail_json(msg="failed to get the network id, please check the network name and make sure it is external")
+        if not router_id:
+            module.fail_json(msg="failed to get the router id, please check the router name")
 
-    if module.params['state'] == 'present':
-        port_id = _get_port_id(neutron, module, router_id, network_id)
-        if not port_id:
-            _add_gateway_router(neutron, module, router_id, network_id)
-            module.exit_json(changed=True, result="created")
-        module.exit_json(changed=False, result="success")
+        network_id = _get_net_id(neutron, module)
+        if not network_id:
+            module.fail_json(msg="failed to get the network id, please check the network name and make sure it is external")
 
-    if module.params['state'] == 'absent':
-        port_id = _get_port_id(neutron, module, router_id, network_id)
-        if not port_id:
-            module.exit_json(changed=False, result="Success")
-        _remove_gateway_router(neutron, module, router_id)
-        module.exit_json(changed=True, result="Deleted")
+        if module.params['state'] == 'present':
+            port_id = _get_port_id(neutron, module, router_id, network_id)
+            if not port_id:
+                _add_gateway_router(neutron, module, router_id, network_id)
+                module.exit_json(changed=True, result="created")
+            module.exit_json(changed=False, result="success")
+
+        if module.params['state'] == 'absent':
+            port_id = _get_port_id(neutron, module, router_id, network_id)
+            if not port_id:
+                module.exit_json(changed=False, result="Success")
+            _remove_gateway_router(neutron, module, router_id)
+            module.exit_json(changed=True, result="Deleted")
+    except shade.OpenStackCloudException as e:
+        module.fail_json(msg=e.message)
 
 # this is magic, see lib/ansible/module_common.py
 from ansible.module_utils.basic import *

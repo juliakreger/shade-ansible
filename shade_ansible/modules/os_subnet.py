@@ -17,19 +17,19 @@
 # along with this software.  If not, see <http://www.gnu.org/licenses/>.
 
 try:
-    from neutronclient.neutron import client
-    from keystoneclient.v2_0 import client as ksclient
+    import shade
+    from shade_ansible import spec
 except ImportError:
-    print("failed=True msg='neutronclient and keystoneclient are required'")
+    print("failed=True msg='shade is required for this module'")
+
 
 DOCUMENTATION = '''
 ---
 module: os_subnet
-version_added: "1.2"
-short_description: Add/Remove floating IP from an instance
+short_description: Add/Remove subnet to an OpenStack network
 extends_documentation_fragment: openstack
 description:
-   - Add or Remove a floating IP to an instance
+   - Add or Remove a subnet to an OpenStack network
 options:
    state:
      description:
@@ -50,11 +50,6 @@ options:
      description:
         - The CIDR representation of the subnet that should be assigned to the subnet
      required: true
-     default: None
-   tenant_name:
-     description:
-        - The name of the tenant for whom the subnet should be created
-     required: false
      default: None
    ip_version:
      description:
@@ -87,71 +82,20 @@ options:
         - From the subnet pool the last IP that should be assigned to the virtual machines
      required: false
      default: None
-requirements: ["quantumclient", "neutronclient", "keystoneclient"]
+requirements: ["shade"]
 '''
 
 EXAMPLES = '''
-# Create a subnet for a tenant with the specified subnet
-- os_subnet: state=present login_username=admin login_password=admin
-             login_tenant_name=admin tenant_name=tenant1
+# Create a subnet with the specified network
+- os_subnet: state=present username=admin password=admin
+             project_name=admin
              network_name=network1 name=net1subnet cidr=192.168.0.0/24"
 '''
 
-_os_keystone   = None
-_os_tenant_id  = None
 _os_network_id = None
-
-def _get_ksclient(module, kwargs):
-    try:
-        kclient = ksclient.Client(username=kwargs.get('login_username'),
-                                 password=kwargs.get('login_password'),
-                                 tenant_name=kwargs.get('login_tenant_name'),
-                                 auth_url=kwargs.get('auth_url'))
-    except Exception, e:
-        module.fail_json(msg = "Error authenticating to the keystone: %s" %e.message)
-    global _os_keystone
-    _os_keystone = kclient
-    return kclient
-
-
-def _get_endpoint(module, ksclient):
-    try:
-        endpoint = ksclient.service_catalog.url_for(service_type='network', endpoint_type='publicURL')
-    except Exception, e:
-        module.fail_json(msg = "Error getting network endpoint: %s" % e.message)
-    return endpoint
-
-def _get_neutron_client(module, kwargs):
-    _ksclient = _get_ksclient(module, kwargs)
-    token     = _ksclient.auth_token
-    endpoint  = _get_endpoint(module, _ksclient)
-    kwargs = {
-            'token':        token,
-            'endpoint_url': endpoint
-    }
-    try:
-        neutron = client.Client('2.0', **kwargs)
-    except Exception, e:
-        module.fail_json(msg = " Error in connecting to neutron: %s" % e.message)
-    return neutron
-
-def _set_tenant_id(module):
-    global _os_tenant_id
-    if not module.params['tenant_name']:
-        tenant_name = module.params['login_tenant_name']
-    else:
-        tenant_name = module.params['tenant_name']
-
-    for tenant in _os_keystone.tenants.list():
-        if tenant.name == tenant_name:
-            _os_tenant_id = tenant.id
-            break
-    if not _os_tenant_id:
-            module.fail_json(msg = "The tenant id cannot be found, please check the parameters")
 
 def _get_net_id(neutron, module):
     kwargs = {
-        'tenant_id': _os_tenant_id,
         'name': module.params['network_name'],
     }
     try:
@@ -171,7 +115,6 @@ def _get_subnet_id(module, neutron):
         module.fail_json(msg = "network id of network not found.")
     else:
         kwargs = {
-            'tenant_id': _os_tenant_id,
             'name': module.params['name'],
         }
         try:
@@ -188,7 +131,6 @@ def _create_subnet(module, neutron):
             'name':            module.params['name'],
             'ip_version':      module.params['ip_version'],
             'enable_dhcp':     module.params['enable_dhcp'],
-            'tenant_id':       _os_tenant_id,
             'gateway_ip':      module.params['gateway_ip'],
             'dns_nameservers': module.params['dns_nameservers'],
             'network_id':      _os_network_id,
@@ -225,37 +167,41 @@ def _delete_subnet(module, neutron, subnet_id):
 
 def main():
 
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
-            name                    = dict(required=True),
-            network_name            = dict(required=True),
-            cidr                    = dict(required=True),
-            tenant_name             = dict(default=None),
-            state                   = dict(default='present', choices=['absent', 'present']),
-            ip_version              = dict(default='4', choices=['4', '6']),
-            enable_dhcp             = dict(default='true', type='bool'),
-            gateway_ip              = dict(default=None),
-            dns_nameservers         = dict(default=None),
-            allocation_pool_start   = dict(default=None),
-            allocation_pool_end     = dict(default=None),
-    ))
-    module = AnsibleModule(argument_spec=argument_spec)
-    neutron = _get_neutron_client(module, module.params)
-    _set_tenant_id(module)
-    if module.params['state'] == 'present':
-        subnet_id = _get_subnet_id(module, neutron)
-        if not subnet_id:
-            subnet_id = _create_subnet(module, neutron)
-            module.exit_json(changed = True, result = "Created" , id = subnet_id)
+    argument_spec = openstack_argument_spec(
+        name                    = dict(required=True),
+        network_name            = dict(required=True),
+        cidr                    = dict(required=True),
+        state                   = dict(default='present', choices=['absent', 'present']),
+        ip_version              = dict(default='4', choices=['4', '6']),
+        enable_dhcp             = dict(default='true', type='bool'),
+        gateway_ip              = dict(default=None),
+        dns_nameservers         = dict(default=None),
+        allocation_pool_start   = dict(default=None),
+        allocation_pool_end     = dict(default=None),
+    )
+    module_kwargs = spec.openstack_module_kwargs()
+    module = AnsibleModule(argument_spec, **module_kwargs)
+
+    try:
+        cloud = shade.openstack_cloud(**module.params)
+        neutron = cloud.neutron_client
+        if module.params['state'] == 'present':
+            subnet_id = _get_subnet_id(module, neutron)
+            if not subnet_id:
+                subnet_id = _create_subnet(module, neutron)
+                module.exit_json(changed = True, result = "Created" , id = subnet_id)
+            else:
+                module.exit_json(changed = False, result = "success" , id = subnet_id)
         else:
-            module.exit_json(changed = False, result = "success" , id = subnet_id)
-    else:
-        subnet_id = _get_subnet_id(module, neutron)
-        if not subnet_id:
-            module.exit_json(changed = False, result = "success")
-        else:
-            _delete_subnet(module, neutron, subnet_id)
-            module.exit_json(changed = True, result = "deleted")
+            subnet_id = _get_subnet_id(module, neutron)
+            if not subnet_id:
+                module.exit_json(changed = False, result = "success")
+            else:
+                _delete_subnet(module, neutron, subnet_id)
+                module.exit_json(changed = True, result = "deleted")
+    except shade.OpenStackCloudException as e:
+        module.fail_json(msg=e.message)
+
 
 # this is magic, see lib/ansible/module_common.py
 from ansible.module_utils.basic import *

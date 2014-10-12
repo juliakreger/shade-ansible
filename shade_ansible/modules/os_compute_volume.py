@@ -13,26 +13,19 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this software.  If not, see <http://www.gnu.org/licenses/>.
-try:
-    from novaclient.v1_1 import client as nova_client
-    from novaclient import exceptions as nova_exc
-except ImportError:
-    print("failed=True msg='novaclient is required for this module'")
-try:
-    from cinderclient.v1 import client as cinder_client
-    from cinderclient import exceptions as cinder_exc
-except ImportError:
-    print("failed=True msg='cinderclient is required for this module'")
 
 import time
 
-import shade
-from shade_ansible import spec
+try:
+    import shade
+    from shade_ansible import spec
+except ImportError:
+    print("failed=True msg='shade is required for this module'")
+
 
 DOCUMENTATION = '''
 ---
 module: os_compute_volume
-version_added: "1.8"
 short_description: Attach/Detach Volumes from OpenStack VM's
 extends_documentation_fragment: openstack
 description:
@@ -68,7 +61,7 @@ options:
       - Device you want to attach
      required: false
      default: None
-requirements: ["novaclient", "cinderclient"]
+requirements: ["shade"]
 '''
 
 EXAMPLES = '''
@@ -124,7 +117,7 @@ def _present_volume(nova, cinder, module):
             if (module.params['device'] and
                 not _check_device_attachment(
                     volume, modules.params['device'],
-                    module.params['server_id']):
+                    module.params['server_id'])):
                 nova.volumes.delete_server_volume(
                     module.params['server_id'],
                     module.params['volume_id'])

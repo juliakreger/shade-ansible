@@ -19,27 +19,27 @@
 
 import operator
 import os
+import time
 
 try:
-    from novaclient.v1_1 import client as nova_client
-    from novaclient.v1_1 import floating_ips 
-    from novaclient import exceptions
-    from novaclient import utils
-    import time
+    import shade
+    from shade_ansible import spec
 except ImportError:
-    print("failed=True msg='novaclient is required for this module'")
+    print("failed=True msg='shade is required for this module'")
 
-import shade
-from shade_ansible import spec
+from novaclient.v1_1 import client as nova_client
+from novaclient.v1_1 import floating_ips 
+from novaclient import exceptions
+from novaclient import utils
+
 
 DOCUMENTATION = '''
 ---
 module: os_compute
-version_added: "1.2"
-short_description: Create/Delete VMs from OpenStack
+short_description: Create/Delete Compute Instances from OpenStack
 extends_documentation_fragment: openstack
 description:
-   - Create or Remove virtual machines from Openstack.
+   - Create or Remove compute instances from OpenStack.
 options:
    state:
      description:
@@ -61,72 +61,65 @@ options:
         - The name of the base image to boot. Mutually exclusive with image_id
      required: true
      default: None
-     version_added: "1.8"
    image_exclude:
      description:
         - Text to use to filter image names, for the case, such as HP, where there are multiple image names matching the common identifying portions. image_exclude is a negative match filter - it is text that may not exist in the image name. Defaults to "(deprecated)"
-     version_added: "1.8"
    flavor_id:
      description:
-        - The id of the flavor in which the new VM has to be created. Mutually exclusive with flavor_ram
+        - The id of the flavor in which the new instance has to be created. Mutually exclusive with flavor_ram
      required: false
      default: 1
    flavor_ram:
      description:
-        - The minimum amount of ram in MB that the flavor in which the new VM has to be created must have. Mutually exclusive with flavor_id
+        - The minimum amount of ram in MB that the flavor in which the new instance has to be created must have. Mutually exclusive with flavor_id
      required: false
      default: 1
-     version_added: "1.8"
    flavor_include:
      description:
         - Text to use to filter flavor names, for the case, such as Rackspace, where there are multiple flavors that have the same ram count. flavor_include is a positive match filter - it must exist in the flavor name.
-     version_added: "1.8"
    key_name:
      description:
-        - The key pair name to be used when creating a VM
+        - The key pair name to be used when creating a instance
      required: false
      default: None
    security_groups:
      description:
-        - The name of the security group to which the VM should be added
+        - The name of the security group to which the instance should be added
      required: false
      default: None
    nics:
      description:
-        - A list of network id's to which the VM's interface should be attached
+        - A list of network id's to which the instance's interface should be attached
      required: false
      default: None
-   auto_floating_ip:
+   public_ip:
      description:
-        - Should a floating ip be auto created and assigned
+        - Ensure instance has public ip however the cloud wants to do that
      required: false
      default: 'yes'
-     version_added: "1.8"
    floating_ips:
      decription:
         - list of valid floating IPs that pre-exist to assign to this node
      required: false
      default: None
-     version_added: "1.8"
    floating_ip_pools:
      description:
         - list of floating IP pools from which to choose a floating IP
      required: false
      default: None
-     version_added: "1.8"
    meta:
      description:
-        - A list of key value pairs that should be provided as a metadata to the new VM
+        - A list of key value pairs that should be provided as a metadata to the new instance
      required: false
      default: None
    wait:
      description:
-        - If the module should wait for the VM to be created.
+        - If the module should wait for the instance to be created.
      required: false
      default: 'yes'
    wait_for:
      description:
-        - The amount of time the module should wait for the VM to get into active state
+        - The amount of time the module should wait for the instance to get into active state
      required: false
      default: 180
    config_drive:
@@ -134,18 +127,16 @@ options:
         - Whether to boot the server with config drive enabled
      required: false
      default: 'no'
-     version_added: "1.8"
    user_data:
      description:
         - Opaque blob of data which is made available to the instance
      required: false
      default: None
-     version_added: "1.6"
-requirements: ["novaclient"]
+requirements: ["shade"]
 '''
 
 EXAMPLES = '''
-# Creates a new VM and attaches to a network and passes metadata to the instance
+# Creates a new instance and attaches to a network and passes metadata to the instance
 - os_compute:
        state: present
        username: admin
@@ -162,7 +153,7 @@ EXAMPLES = '''
          hostname: test1
          group: uge_master
 
-# Creates a new VM in HP Cloud AE1 region availability zone az2 and automatically assigns a floating IP
+# Creates a new instance in HP Cloud AE1 region availability zone az2 and automatically assigns a floating IP
 - name: launch a compute instance
   hosts: localhost
   tasks:
@@ -183,7 +174,7 @@ EXAMPLES = '''
       security_groups: default
       auto_floating_ip: yes
 
-# Creates a new VM in HP Cloud AE1 region availability zone az2 and assigns a pre-known floating IP
+# Creates a new instance in HP Cloud AE1 region availability zone az2 and assigns a pre-known floating IP
 - name: launch a compute instance
   hosts: localhost
   tasks:
@@ -204,7 +195,7 @@ EXAMPLES = '''
       floating-ips:
         - 12.34.56.79
 
-# Creates a new VM with 4G of RAM on Ubuntu Trusty, ignoring deprecated images
+# Creates a new instance with 4G of RAM on Ubuntu Trusty, ignoring deprecated images
 - name: launch a compute instance
   hosts: localhost
   tasks:
@@ -221,7 +212,7 @@ EXAMPLES = '''
       image_exclude: deprecated
       flavor_ram: 4096
 
-# Creates a new VM with 4G of RAM on Ubuntu Trusty on a Rackspace Performance node in DFW
+# Creates a new instance with 4G of RAM on Ubuntu Trusty on a Rackspace Performance node in DFW
 - name: launch a compute instance
   hosts: localhost
   tasks:
@@ -481,7 +472,7 @@ def _get_server_state(module, nova):
         module.fail_json(msg = "Error in getting the server list: %s" % e.message)
     if server and module.params['state'] == 'present':
         if server.status != 'ACTIVE':
-            module.fail_json( msg="The VM is available but not Active. state:" + server.status)
+            module.fail_json( msg="The instance is available but not Active. state:" + server.status)
         (ip_changed, server) = _check_floating_ips(module, nova, server)
         private = openstack_find_nova_addresses(getattr(server, 'addresses'), 'fixed', 'private')
         public = openstack_find_nova_addresses(getattr(server, 'addresses'), 'floating', 'public')
@@ -491,7 +482,6 @@ def _get_server_state(module, nova):
     if module.params['state'] == 'absent':
         module.exit_json(changed = False, result = "not present")
     return True
-
 
 
 def main():

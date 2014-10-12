@@ -17,15 +17,14 @@
 # along with this software.  If not, see <http://www.gnu.org/licenses/>.
 
 try:
-    from neutronclient.neutron import client
-    from keystoneclient.v2_0 import client as ksclient
+    import shade
+    from shade_ansible import spec
 except ImportError:
-    print("failed=True msg='neutronclient and keystoneclient are required'")
+    print("failed=True msg='shade is required for this module'")
 
 DOCUMENTATION = '''
 ---
 module: os_network
-version_added: "1.4"
 short_description: Creates/Removes networks from OpenStack
 extends_documentation_fragment: openstack
 description:
@@ -76,7 +75,7 @@ options:
         - Whether the state should be marked as up or down
      required: false
      default: true
-requirements: ["neutronclient", "keystoneclient"]
+requirements: ["shade"]
 
 '''
 
@@ -84,50 +83,16 @@ EXAMPLES = '''
 # Create a GRE backed network with tunnel id 1 for tenant1
 - os_network: name=t1network tenant_name=tenant1 state=present
               provider_network_type=gre provider_segmentation_id=1
-              login_username=admin login_password=admin login_tenant_name=admin
+              username=admin password=admin project_name=admin
 
 # Create an external network
 - os_network: name=external_network state=present
               provider_network_type=local router_external=yes
-              login_username=admin login_password=admin login_tenant_name=admin
+              username=admin password=admin project_name=admin
 '''
 
-_os_keystone = None
 _os_tenant_id = None
 
-def _get_ksclient(module, kwargs):
-    try:
-        kclient = ksclient.Client(username=kwargs.get('login_username'),
-                                 password=kwargs.get('login_password'),
-                                 tenant_name=kwargs.get('login_tenant_name'),
-                                 auth_url=kwargs.get('auth_url'))
-    except Exception, e:
-        module.fail_json(msg = "Error authenticating to the keystone: %s" %e.message)
-    global _os_keystone
-    _os_keystone = kclient
-    return kclient
-
-
-def _get_endpoint(module, ksclient):
-    try:
-        endpoint = ksclient.service_catalog.url_for(service_type='network', endpoint_type='publicURL')
-    except Exception, e:
-        module.fail_json(msg = "Error getting network endpoint: %s " %e.message)
-    return endpoint
-
-def _get_neutron_client(module, kwargs):
-    _ksclient = _get_ksclient(module, kwargs)
-    token = _ksclient.auth_token
-    endpoint = _get_endpoint(module, _ksclient)
-    kwargs = {
-            'token': token,
-            'endpoint_url': endpoint
-    }
-    try:
-        neutron = client.Client('2.0', **kwargs)
-    except Exception, e:
-        module.fail_json(msg = " Error in connecting to neutron: %s " %e.message)
-    return neutron
 
 def _set_tenant_id(module):
     global _os_tenant_id
@@ -203,47 +168,52 @@ def _delete_network(module, net_id, neutron):
 
 def main():
 
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
-            name                            = dict(required=True),
-            tenant_name                     = dict(default=None),
-            provider_network_type           = dict(default=None, choices=['local', 'vlan', 'flat', 'gre']),
-            provider_physical_network       = dict(default=None),
-            provider_segmentation_id        = dict(default=None),
-            router_external                 = dict(default=False, type='bool'),
-            shared                          = dict(default=False, type='bool'),
-            admin_state_up                  = dict(default=True, type='bool'),
-            state                           = dict(default='present', choices=['absent', 'present'])
-    ))
-    module = AnsibleModule(argument_spec=argument_spec)
+    argument_spec = spec.openstack_argument_spec(
+        name                            = dict(required=True),
+        tenant_name                     = dict(default=None),
+        provider_network_type           = dict(default=None, choices=['local', 'vlan', 'flat', 'gre']),
+        provider_physical_network       = dict(default=None),
+        provider_segmentation_id        = dict(default=None),
+        router_external                 = dict(default=False, type='bool'),
+        shared                          = dict(default=False, type='bool'),
+        admin_state_up                  = dict(default=True, type='bool'),
+        state                           = dict(default='present', choices=['absent', 'present'])
+    )
+    module_kwargs = spec.openstack_module_kwargs()
+    module = AnsibleModule(argument_spec, **module_kwargs)
 
     if module.params['provider_network_type'] in ['vlan' , 'flat']:
-            if not module.params['provider_physical_network']:
-                module.fail_json(msg = " for vlan and flat networks, variable provider_physical_network should be set.")
+        if not module.params['provider_physical_network']:
+            module.fail_json(msg = " for vlan and flat networks, variable provider_physical_network should be set.")
 
     if module.params['provider_network_type']  in ['vlan', 'gre']:
             if not module.params['provider_segmentation_id']:
                 module.fail_json(msg = " for vlan & gre networks, variable provider_segmentation_id should be set.")
 
-    neutron = _get_neutron_client(module, module.params)
+    try:
+        cloud = shade.openstack_cloud(**module.params)
+        neutron = cloud.neutron_client
 
-    _set_tenant_id(module)
+        _set_tenant_id(module)
 
-    if module.params['state'] == 'present':
-        network_id = _get_net_id(neutron, module)
-        if not network_id:
-            network_id = _create_network(module, neutron)
-            module.exit_json(changed = True, result = "Created", id = network_id)
-        else:
-            module.exit_json(changed = False, result = "Success", id = network_id)
+        if module.params['state'] == 'present':
+            network_id = _get_net_id(neutron, module)
+            if not network_id:
+                network_id = _create_network(module, neutron)
+                module.exit_json(changed = True, result = "Created", id = network_id)
+            else:
+                module.exit_json(changed = False, result = "Success", id = network_id)
 
-    if module.params['state'] == 'absent':
-        network_id = _get_net_id(neutron, module)
-        if not network_id:
-            module.exit_json(changed = False, result = "Success")
-        else:
-            _delete_network(module, network_id, neutron)
-            module.exit_json(changed = True, result = "Deleted")
+        if module.params['state'] == 'absent':
+            network_id = _get_net_id(neutron, module)
+            if not network_id:
+                module.exit_json(changed = False, result = "Success")
+            else:
+                _delete_network(module, network_id, neutron)
+                module.exit_json(changed = True, result = "Deleted")
+    except shade.OpenStackCloudException as e:
+        module.fail_json(msg=e.message)
+
 
 # this is magic, see lib/ansible/module_common.py
 from ansible.module_utils.basic import *

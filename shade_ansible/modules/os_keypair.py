@@ -19,17 +19,20 @@
 
 import time
 
-import shade
-from shade_ansible import spec
+try:
+    import shade
+    from shade_ansible import spec
+except ImportError:
+    print("failed=True msg='shade is required for this module'")
+
 
 DOCUMENTATION = '''
 ---
 module: os_keypair
-version_added: "1.2"
-short_description: Add/Delete key pair from nova
+short_description: Add/Delete a keypair from OpenStack
 extends_documentation_fragment: openstack
 description:
-   - Add or Remove key pair from nova .
+   - Add or Remove key pair from OpenStack
 options:
    state:
      description:
@@ -47,7 +50,7 @@ options:
      required: false
      default: None
 
-requirements: ["novaclient"]
+requirements: ["shade"]
 '''
 
 EXAMPLES = '''

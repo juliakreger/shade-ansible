@@ -16,18 +16,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this software.  If not, see <http://www.gnu.org/licenses/>.
 
+import time
 try:
-    from novaclient.v1_1 import client as nova_client
-    from neutronclient.neutron import client
-    from keystoneclient.v2_0 import client as ksclient
-    import time
+    import shade
+    from shade_ansible import spec
 except ImportError:
-    print "failed=True msg='novaclient, keystoneclient, and neutronclient are required'"
+    print "failed=True msg='shade is required'"
 
 DOCUMENTATION = '''
 ---
 module: os_compute_floating_ip
-version_added: "1.2"
 short_description: Associate or disassociate a particular floating IP with an instance
 extends_documentation_fragment: openstack
 description:
@@ -48,53 +46,20 @@ options:
         - floating ip that should be assigned to the instance
      required: true
      default: None
-requirements: ["quantumclient", "neutronclient", "keystoneclient"]
+requirements: ["shade"]
 '''
 
 EXAMPLES = '''
 # Associate a specific floating IP with an Instance
 - os_compute_floating_ip:
            state=present
-           login_username=admin
-           login_password=admin
-           login_tenant_name=admin
+           username=admin
+           password=admin
+           project_name=admin
            ip_address=1.1.1.1
            instance_name=vm1
 '''
 
-def _get_ksclient(module, kwargs):
-    try:
-        kclient = ksclient.Client(username=kwargs.get('login_username'),
-                                 password=kwargs.get('login_password'),
-                                 tenant_name=kwargs.get('login_tenant_name'),
-                                 auth_url=kwargs.get('auth_url'))
-    except Exception, e:
-        module.fail_json(msg = "Error authenticating to the keystone: %s " % e.message)
-    global _os_keystone
-    _os_keystone = kclient
-    return kclient
-
-
-def _get_endpoint(module, ksclient):
-    try:
-        endpoint = ksclient.service_catalog.url_for(service_type='network', endpoint_type='publicURL')
-    except Exception, e:
-        module.fail_json(msg = "Error getting network endpoint: %s" % e.message)
-    return endpoint
-
-def _get_neutron_client(module, kwargs):
-    _ksclient = _get_ksclient(module, kwargs)
-    token = _ksclient.auth_token
-    endpoint = _get_endpoint(module, _ksclient)
-    kwargs = {
-            'token': token,
-            'endpoint_url': endpoint
-    }
-    try:
-        neutron = client.Client('2.0', **kwargs)
-    except Exception, e:
-        module.fail_json(msg = "Error in connecting to neutron: %s " % e.message)
-    return neutron
 
 def _get_server_state(module, nova):
     server_info = None
@@ -151,38 +116,39 @@ def _update_floating_ip(neutron, module, port_id, floating_ip_id):
 
 def main():
 
-    argument_spec = openstack_argument_spec()
-    argument_spec.update(dict(
-            ip_address                      = dict(required=True),
-            instance_name                   = dict(required=True),
-            state                           = dict(default='present', choices=['absent', 'present'])
-    ))
-    module = AnsibleModule(argument_spec=argument_spec)
+    argument_spec = spec.openstack_argument_spec(
+        ip_address                      = dict(required=True),
+        instance_name                   = dict(required=True),
+        state                           = dict(default='present', choices=['absent', 'present'])
+    )
+    module_kwargs = spec.openstack_module_kwargs()
+    module = AnsibleModule(argument_spec, **module_kwargs)
 
     try:
-        nova = nova_client.Client(module.params['login_username'], module.params['login_password'],
-                                 module.params['login_tenant_name'], module.params['auth_url'], service_type='compute')
-    except Exception, e:
-        module.fail_json( msg = " Error in authenticating to nova: %s" % e.message)
-    neutron = _get_neutron_client(module, module.params)
-    state, floating_ip_id = _get_floating_ip_id(module, neutron)
-    if module.params['state'] == 'present':
-        if state == 'attached':
-            module.exit_json(changed = False, result = 'attached', public_ip=module.params['ip_address'])
-        server_info, server_obj = _get_server_state(module, nova)
-        if not server_info:
-            module.fail_json(msg = " The instance name provided cannot be found")
-        port_id = _get_port_id(neutron, module, server_info['id'])
-        if not port_id:
-            module.fail_json(msg = "Cannot find a port for this instance, maybe fixed ip is not assigned")
-        _update_floating_ip(neutron, module, port_id, floating_ip_id)
+        cloud = shade.openstack_cloud(**module.params)
+        nova = cloud.nova_client
+        neutron = cloud.neutron_client
 
-    if module.params['state'] == 'absent':
-        if state == 'detached':
-            module.exit_json(changed = False, result = 'detached')
-        if state == 'attached':
-            _update_floating_ip(neutron, module, None, floating_ip_id)
-        module.exit_json(changed = True, result = "detached")
+        state, floating_ip_id = _get_floating_ip_id(module, neutron)
+        if module.params['state'] == 'present':
+            if state == 'attached':
+                module.exit_json(changed = False, result = 'attached', public_ip=module.params['ip_address'])
+            server_info, server_obj = _get_server_state(module, nova)
+            if not server_info:
+                module.fail_json(msg = " The instance name provided cannot be found")
+            port_id = _get_port_id(neutron, module, server_info['id'])
+            if not port_id:
+                module.fail_json(msg = "Cannot find a port for this instance, maybe fixed ip is not assigned")
+            _update_floating_ip(neutron, module, port_id, floating_ip_id)
+
+        if module.params['state'] == 'absent':
+            if state == 'detached':
+                module.exit_json(changed = False, result = 'detached')
+            if state == 'attached':
+                _update_floating_ip(neutron, module, None, floating_ip_id)
+            module.exit_json(changed = True, result = "detached")
+    except shade.OpenStackCloudException as e:
+        module.fail_json(msg=e.message)
 
 # this is magic, see lib/ansible/module_common.py
 from ansible.module_utils.basic import *
