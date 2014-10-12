@@ -128,7 +128,7 @@ options:
         - Whether to boot the server with config drive enabled
      required: false
      default: 'no'
-   user_data:
+   userdata:
      description:
         - Opaque blob of data which is made available to the instance
      required: false
@@ -232,26 +232,14 @@ EXAMPLES = '''
 '''
 
 
-
-def _delete_server(module, nova):
-    name = None
-    server_list = None
+def _delete_server(module, cloud):
     try:
-        server_list = nova.servers.list(True, {'name': module.params['name']})
-        if server_list:
-            server = [x for x in server_list if x.name == module.params['name']]
-            nova.servers.delete(server.pop())
-    except Exception, e:
+        cloud.delete_server(
+            module.params['name'], wait=module.params['wait'],
+            timeout=module.params['timeout'])
+    except Exception as e:
         module.fail_json( msg = "Error in deleting vm: %s" % e.message)
-    if module.params['wait'] == 'no':
-        module.exit_json(changed = True, result = "deleted")
-    expire = time.time() + module.params['timeout']
-    while time.time() < expire:
-        name = nova.servers.list(True, {'name': module.params['name']})
-        if not name:
-            module.exit_json(changed = True, result = "deleted")
-        time.sleep(5)
-    module.fail_json(msg = "Timed out waiting for server to get deleted, please check manually")
+    module.exit_json(changed=True, result='deleted')
 
 
 def _add_floating_ip_from_pool(module, nova, server):
@@ -382,8 +370,7 @@ def _create_server(module, cloud, nova):
                 'nics' : module.params['nics'],
                 'meta' : module.params['meta'],
                 'security_groups': module.params['security_groups'].split(','),
-                #userdata is unhyphenated in novaclient, but hyphenated here for consistency with the ec2 module:
-                'userdata': module.params['user_data'],
+                'userdata': module.params['userdata'],
                 'config_drive': module.params['config_drive'],
     }
 
@@ -458,26 +445,15 @@ def _check_floating_ips(module, nova, server):
     return (changed, server)
 
 
-def _get_server_state(module, nova):
-    server = None
-    try:
-        servers = nova.servers.list(True, {'name': module.params['name']})
-        if servers:
-            # the {'name': module.params['name']} will also return servers
-            # with names that partially match the server name, so we have to
-            # strictly filter here
-            servers = [x for x in servers if x.name == module.params['name']]
-            if servers:
-                server = servers[0]
-    except Exception, e:
-        module.fail_json(msg = "Error in getting the server list: %s" % e.message)
+def _get_server_state(module, cloud, nova):
+    server = cloud.get_server_by_name(module.params['name'])
     if server and module.params['state'] == 'present':
         if server.status != 'ACTIVE':
-            module.fail_json( msg="The instance is available but not Active. state:" + server.status)
+            module.fail_json(
+                msg="The instance is available but not Active state:" + server.status)
         (ip_changed, server) = _check_floating_ips(module, nova, server)
-        private = openstack_find_nova_addresses(getattr(server, 'addresses'), 'fixed', 'private')
-        public = openstack_find_nova_addresses(getattr(server, 'addresses'), 'floating', 'public')
-        module.exit_json(changed = ip_changed, id = server.id, public_ip = ''.join(public), private_ip = ''.join(private), info = server._info)
+        hostvars = meta.get_hostvars_from_server(cloud, server)
+        module.exit_json(changed=ip_changed, id=server.id, info=hostvars)
     if server and module.params['state'] == 'absent':
         return True
     if module.params['state'] == 'absent':
@@ -499,7 +475,7 @@ def main():
         security_groups                 = dict(default='default'),
         nics                            = dict(default=None),
         meta                            = dict(default=None),
-        user_data                       = dict(default=None),
+        userdata                        = dict(default=None),
         config_drive                    = dict(default=False, type='bool'),
         auto_floating_ip                = dict(default=False, type='bool'),
         floating_ips                    = dict(default=None),
@@ -524,11 +500,11 @@ def main():
             if not module.params['image_id'] and not module.params['image_name']:
                 module.fail_json( msg = "Parameter 'image_id' or `image_name` is required if state == 'present'")
             else:
-                _get_server_state(module, nova)
+                _get_server_state(module, cloud, nova)
                 _create_server(module, cloud, nova)
         if module.params['state'] == 'absent':
-            _get_server_state(module, nova)
-            _delete_server(module, nova)
+            _get_server_state(module, cloud, nova)
+            _delete_server(module, cloud)
     except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 
