@@ -1,7 +1,7 @@
 #!/usr/bin/python
-#coding: utf-8 -*-
 
-# (c) 2013, Benno Joy <benno@ansible.com>
+# Copyright (c) 2014 Hewlett-Packard Development Company, L.P.
+# Copyright (c) 2013, Benno Joy <benno@ansible.com>
 #
 # This module is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
