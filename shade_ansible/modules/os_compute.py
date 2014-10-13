@@ -233,6 +233,11 @@ EXAMPLES = '''
 '''
 
 
+def _exit_hostvars(cloud, server, changed=True):
+    hostvars = meta.get_hostvars_from_server(cloud, server)
+    module.exit_json(changed=ip_changed, id=server.id, openstack=hostvars)
+
+
 def _delete_server(module, cloud):
     try:
         cloud.delete_server(
@@ -281,8 +286,7 @@ def _create_server(module, cloud):
         auto_ip=module.params['auto_floating_ip'],
         wait=module.params['wait'], timeout=module.params['timeout'])
 
-    hostvars = meta.get_hostvars_from_server(cloud, server)
-    module.exit_json(changed=True, id=server.id, info=hostvars)
+    _exit_hostvars(cloud, server)
 
 
 def _delete_floating_ip_list(cloud, server, extra_ips):
@@ -332,8 +336,7 @@ def _get_server_state(module, cloud):
             module.fail_json(
                 msg="The instance is available but not Active state:" + server.status)
         (ip_changed, server) = _check_floating_ips(module, cloud, server)
-        hostvars = meta.get_hostvars_from_server(cloud, server)
-        module.exit_json(changed=ip_changed, id=server.id, info=hostvars)
+        _exit_hostvars(cloud, server, ip_changed)
     if server and module.params['state'] == 'absent':
         return True
     if module.params['state'] == 'absent':
