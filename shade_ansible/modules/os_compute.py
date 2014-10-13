@@ -360,7 +360,7 @@ def main():
         meta                            = dict(default=None),
         userdata                        = dict(default=None),
         config_drive                    = dict(default=False, type='bool'),
-        auto_floating_ip                = dict(default=False, type='bool'),
+        auto_floating_ip                = dict(default=True, type='bool'),
         floating_ips                    = dict(default=None),
         floating_ip_pools               = dict(default=None),
     )

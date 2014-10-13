@@ -20,6 +20,7 @@ import time
 
 try:
     import shade
+    from shade import meta
     from shade_ansible import spec
 except ImportError:
     print("failed=True msg='shade is required for this module'")
@@ -107,7 +108,7 @@ def _check_device_attachment(volume, device, server_id):
     return False
 
 
-def _present_volume(nova, cinder, module):
+def _present_volume(cloud, nova, cinder, module):
     try:
         volume = cinder.volumes.get(module.params['volume_id'])
     except Exception as e:
@@ -125,6 +126,8 @@ def _present_volume(nova, cinder, module):
                     module.params['volume_id'])
                 volume = _wait_for_detach(cinder, module)
             else:
+                server = cloud.get_server_by_id(module.params['server_id'])
+                hostvars = meta.get_hostvars_from_server(cloud, server)
                 module.exit_json(
                     changed=False,
                     result='Volume already attached',
@@ -152,8 +155,12 @@ def _present_volume(nova, cinder, module):
                     break
 
     if attachment:
+        server = cloud.get_server_by_id(module.params['server_id'])
+        hostvars = meta.get_hostvars_from_server(cloud, server)
         module.exit_json(
-            changed=True, id=volume.id, attachments=volume.attachments)
+            changed=True, id=volume.id, attachments=volume.attachments,
+            openstack=hostvars,
+        )
     module.fail_json(
         msg='Adding volume {volume} to server {server} timed out'.format(
             volume=volume.display_name, server=module.params['server_id']))
@@ -213,7 +220,7 @@ def main():
                 module.params['server_name'])
 
         if module.params['state'] == 'present':
-            _present_volume(nova, cinder, module)
+            _present_volume(cloud, nova, cinder, module)
         if module.params['state'] == 'absent':
             _absent_volume(nova, cinder, module)
 
