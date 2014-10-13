@@ -24,6 +24,7 @@ import time
 
 try:
     import shade
+    from shade import meta
     from shade_ansible import spec
 except ImportError:
     print("failed=True msg='shade is required for this module'")
@@ -242,129 +243,24 @@ def _delete_server(module, cloud):
     module.exit_json(changed=True, result='deleted')
 
 
-def _add_floating_ip_from_pool(module, nova, server):
-
-    # instantiate FloatingIPManager object
-    floating_ip_obj = floating_ips.FloatingIPManager(nova)
-
-    # empty dict and list 
-    usable_floating_ips = {} 
-    pools = []
-
-    # user specified
-    pools = module.params['floating_ip_pools']
-
-    # get the list of all floating IPs. Mileage may 
-    # vary according to Nova Compute configuration 
-    # per cloud provider
-    all_floating_ips = floating_ip_obj.list()
-
-    # iterate through all pools of IP address. Empty
-    # string means all and is the default value
-    for pool in pools:
-        # temporary list per pool
-        pool_ips = []
-        # loop through all floating IPs
-        for f_ip in all_floating_ips:
-            # if not reserved and the correct pool, add
-            if f_ip.instance_id is None and (f_ip.pool == pool):
-                pool_ips.append(f_ip.ip)
-                # only need one
-                break
-
-        # if the list is empty, add for this pool
-        if not pool_ips:
-            try:
-                new_ip = nova.floating_ips.create(pool)
-            except Exception, e: 
-                module.fail_json(msg = "Unable to create floating ip")
-            pool_ips.append(new_ip.ip)
-        # Add to the main list
-        usable_floating_ips[pool] = pool_ips
-
-    # finally, add ip(s) to instance for each pool
-    for pool in usable_floating_ips:
-        for ip in usable_floating_ips[pool]:
-            try:
-                server.add_floating_ip(ip)
-                # We only need to assign one ip - but there is an inherent
-                # race condition and some other cloud operation may have
-                # stolen an available floating ip
-                break
-            except Exception, e:
-                module.fail_json(msg = "Error attaching IP %s to instance %s: %s " % (ip, server.id, e.message))
-
-
-def _add_floating_ip_list(module, server, ips):
-    # add ip(s) to instance
-    for ip in ips:
-        try:
-            server.add_floating_ip(ip)
-        except Exception, e:
-            module.fail_json(msg = "Error attaching IP %s to instance %s: %s " % (ip, server.id, e.message))
-
-
-def _add_auto_floating_ip(module, nova, server):
-
-    try:
-        new_ip = nova.floating_ips.create()
-    except Exception as e:
-        module.fail_json(msg = "Unable to create floating ip: %s" % (e.message))
-
-    try:
-        server.add_floating_ip(new_ip)
-    except Exception as e:
-        # Clean up - we auto-created this ip, and it's not attached
-        # to the server, so the cloud will not know what to do with it
-        server.floating_ips.delete(new_ip)
-        module.fail_json(msg = "Error attaching IP %s to instance %s: %s " % (ip, server.id, e.message))
-
-
-def _add_floating_ip(module, nova, server):
-
-    if module.params['floating_ip_pools']:
-        _add_floating_ip_from_pool(module, nova, server)
-    elif module.params['floating_ips']:
-        _add_floating_ip_list(module, server, module.params['floating_ips'])
-    elif module.params['auto_floating_ip']:
-        _add_auto_floating_ip(module, nova, server)
-    else:
-        return server
-
-    # this may look redundant, but if there is now a 
-    # floating IP, then it needs to be obtained from
-    # a recent server object if the above code path exec'd 
-    try:
-        server = nova.servers.get(server.id)
-    except Exception, e:
-        module.fail_json(msg = "Error in getting info from instance: %s " % e.message)
-    return server
-
-
 def _get_image_id(module, cloud):
-    if module.params['image_name']:
-        for (image_id, image_name) in cloud.list_images().items():
-            if (module.params['image_name'] in image_name and (
-                    not module.params['image_exclude']
-                    or module.params['image_exclude'] not in image_name)):
-                return image_id
-        module.fail_json(msg = "Error finding image id from name(%s)" % module.params['image_name'])
-    return module.params['image_id']
+    if module.params['image_id']:
+        return module_params['image_id']
+    return cloud.get_image_by_name(
+        module.params['image_name'], module.params['image_exclude']).id
 
 
-def _get_flavor_id(module, nova):
-    if module.params['flavor_ram']:
-        for flavor in sorted(nova.flavors.list(), key=operator.attrgetter('ram')):
-            if (flavor.ram >= module.params['flavor_ram'] and
-                    (not module.params['flavor_include'] or module.params['flavor_include'] in flavor.name)):
-                return flavor.id
-            module.fail_json(msg = "Error finding flavor with %sMB of RAM" % module.params['flavor_ram'])
-    return module.params['flavor_id']
+def _get_flavor_id(module, cloud):
+    if module.params['flavor_id']:
+        return module.params['flavor_id']
+    return cloud.get_flavor_by_ram(
+        module.params['flavor_ram'], module.params['flavor_include']).id
 
 
-def _create_server(module, cloud, nova):
+def _create_server(module, cloud):
     image_id = _get_image_id(module, cloud)
-    flavor_id = _get_flavor_id(module, nova)
+    flavor_id = _get_flavor_id(module, cloud)
+
     bootargs = [module.params['name'], image_id, flavor_id]
     bootkwargs = {
                 'nics' : module.params['nics'],
@@ -377,53 +273,37 @@ def _create_server(module, cloud, nova):
     for optional_param in ('region_name', 'key_name', 'availability_zone'):
         if module.params[optional_param]:
             bootkwargs[optional_param] = module.params[optional_param]
-    try:
-        server = nova.servers.create(*bootargs, **bootkwargs)
-        server = nova.servers.get(server.id)
-    except Exception, e:
-            module.fail_json( msg = "Error in creating instance: %s " % e.message)
-    if module.params['wait'] == 'yes':
-        expire = time.time() + module.params['timeout']
-        while time.time() < expire:
-            try:
-                server = nova.servers.get(server.id)
-            except Exception, e:
-                    module.fail_json( msg = "Error in getting info from instance: %s" % e.message)
-            if server.status == 'ACTIVE':
-                server = _add_floating_ip(module, nova, server)
 
-                private = openstack_find_nova_addresses(getattr(server, 'addresses'), 'fixed', 'private')
-                public = openstack_find_nova_addresses(getattr(server, 'addresses'), 'floating', 'public')
+    server = cloud.create_server(
+        bootargs, bootkwargs,
+        ip_pool=module.params['floating_ip_pools'],
+        ips=module.params['floating_ips'],
+        auto_ip=module.params['auto_floating_ip'],
+        wait=module.params['wait'], timeout=module.params['timeout'])
 
-                # now exit with info 
-                module.exit_json(changed = True, id = server.id, private_ip=''.join(private), public_ip=''.join(public), status = server.status, info = server._info)
-
-            if server.status == 'ERROR':
-                module.fail_json(msg = "Error in creating the server, please check logs")
-            time.sleep(2)
-
-        module.fail_json(msg = "Timeout waiting for the server to come up.. Please check manually")
-    if server.status == 'ERROR':
-            module.fail_json(msg = "Error in creating the server.. Please check manually")
-    private = openstack_find_nova_addresses(getattr(server, 'addresses'), 'fixed', 'private')
-    public = openstack_find_nova_addresses(getattr(server, 'addresses'), 'floating', 'public')
-
-    module.exit_json(changed = True, id = info['id'], private_ip=''.join(private), public_ip=''.join(public), status = server.status, info = server._info)
+    hostvars = meta.get_hostvars_from_server(cloud, server)
+    module.exit_json(changed=True, id=server.id, info=hostvars)
 
 
-def _delete_floating_ip_list(module, nova, server, extra_ips):
+def _delete_floating_ip_list(cloud, server, extra_ips):
     for ip in extra_ips:
-        nova.servers.remove_floating_ip(server=server.id, address=ip)
+        cloud.nova_client.servers.remove_floating_ip(
+            server=server.id, address=ip)
 
 
-def _check_floating_ips(module, nova, server):
+def _check_floating_ips(module, cloud, server):
     changed = False
     if module.params['floating_ip_pools'] or module.params['floating_ips'] or module.params['auto_floating_ip']:
         ips = openstack_find_nova_addresses(server.addresses, 'floating')
         if not ips:
             # If we're configured to have a floating but we don't have one,
             # let's add one
-            server = _add_floating_ip(module, nova, server)
+            server = cloud.add_ips_to_server(
+                server,
+                auto_ip=module.params['auto_floating_ip'],
+                ips=module.params['floating_ips'],
+                ip_pool=module.params['floating_ip_pools'],
+            )
             changed = True
         elif module.params['floating_ips']:
             # we were configured to have specific ips, let's make sure we have
@@ -433,25 +313,25 @@ def _check_floating_ips(module, nova, server):
                 if ip not in ips:
                     missing_ips.append(ip)
             if missing_ips:
-                server = _add_floating_ip_list(module, server, missing_ips)
+                server = cloud.add_ip_list(server, missing_ips)
                 changed = True
             extra_ips = []
             for ip in ips:
                 if ip not in module.params['floating_ips']:
                     extra_ips.append(ip)
             if extra_ips:
-                _delete_floating_ip_list(module, server, extra_ips)
+                _delete_floating_ip_list(cloud, server, extra_ips)
                 changed = True
     return (changed, server)
 
 
-def _get_server_state(module, cloud, nova):
+def _get_server_state(module, cloud):
     server = cloud.get_server_by_name(module.params['name'])
     if server and module.params['state'] == 'present':
         if server.status != 'ACTIVE':
             module.fail_json(
                 msg="The instance is available but not Active state:" + server.status)
-        (ip_changed, server) = _check_floating_ips(module, nova, server)
+        (ip_changed, server) = _check_floating_ips(module, cloud, server)
         hostvars = meta.get_hostvars_from_server(cloud, server)
         module.exit_json(changed=ip_changed, id=server.id, info=hostvars)
     if server and module.params['state'] == 'absent':
@@ -468,7 +348,7 @@ def main():
         image_id                        = dict(default=None),
         image_name                      = dict(default=None),
         image_exclude                   = dict(default='(deprecated)'),
-        flavor_id                       = dict(default=1),
+        flavor_id                       = dict(default=None),
         flavor_ram                      = dict(default=None, type='int'),
         flavor_include                  = dict(default=None),
         key_name                        = dict(default=None),
@@ -494,16 +374,15 @@ def main():
 
     try:
         cloud = shade.openstack_cloud(**module.params)
-        nova = cloud.nova_client
 
         if module.params['state'] == 'present':
             if not module.params['image_id'] and not module.params['image_name']:
                 module.fail_json( msg = "Parameter 'image_id' or `image_name` is required if state == 'present'")
             else:
-                _get_server_state(module, cloud, nova)
-                _create_server(module, cloud, nova)
+                _get_server_state(module, cloud)
+                _create_server(module, cloud)
         if module.params['state'] == 'absent':
-            _get_server_state(module, cloud, nova)
+            _get_server_state(module, cloud)
             _delete_server(module, cloud)
     except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
