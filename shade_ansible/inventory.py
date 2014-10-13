@@ -88,8 +88,9 @@ class NovaInventory(object):
                     continue
 
                 server_vars = meta['server_vars']
-                server_vars['ansible_ssh_host'] = server_vars['interface_ip']
-                hostvars[server.name] = server_vars
+                hostvars[server.name][
+                    'ansible_ssh_host'] = server_vars['interface_ip']
+                hostvars[server.name]['openstack'] = server_vars
 
                 for group in meta['groups']:
                     groups[group].append(server.name)
