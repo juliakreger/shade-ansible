@@ -1,0 +1,59 @@
+
+---
+- hosts: localhost
+  connection: local
+  gather_facts: False
+  tasks: 
+  - name: Add Launch Keypair
+    os_keypair:
+        cloud: mordred
+        name: "launch_keypair"
+        public_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+  - name: Add volume
+    os_volume:
+        cloud: mordred
+        display_name: foo
+        size: 5
+        wait: true
+  - name: Launch Node
+    os_compute:
+        cloud: mordred
+        name: "test-ansible"
+        key_name: "launch_keypair"
+        image_name: "Ubuntu Server 14.04.1 LTS (amd64 20140927) - Partner Image"
+        flavor_ram: 102
+        meta:
+            group: "test-group"
+    register: node
+  - name: Wait for SSH to work
+    wait_for: host={{ node.openstack.interface_ip }} port=22
+    when: node.changed == True
+  - name: Attach volume
+    os_compute_volume:
+        cloud: mordred
+        server_id: "{{ node.id }}"
+        volume_name: foo
+        wait: true
+    register: volume
+  - debug: var=volume
+  - name: Add all instance public IPs to host group
+    add_host:
+        hostname: "{{ node.openstack.interface_ip }}"
+        groupname: added
+        openstack: "{{ volume.openstack }}"
+- hosts: added
+  gather_facts: False
+  remote_user: ubuntu
+  sudo: yes
+  tasks: 
+  - debug: var=openstack
+  - name: Make filesystem
+    filesystem:
+        fstype: ext4 
+        dev: "{{ openstack.volumes[0]['attachments'][0]['device'] }}"
+  - name: Mount volume
+    mount:
+        src: "{{ openstack.volumes[0]['attachments'][0]['device'] }}"
+        name: "/mnt/vol"
+        fstype: ext4
+        state: mounted
