@@ -40,12 +40,29 @@ options:
       description:
         - globally unique identifier (UUID) to be given to the resource. Will be auto-generated if not specified.
       required: false
-      default None
+      default: None
     driver:
       description:
         - The name of the Ironic Driver to use with this node.
       required: true
       default: None
+    driver_info:
+      description:
+        - Information for this server's driver. Will vary based on which driver is in use. Any sub-field which is populated will be validated during creation.
+        power:
+          - Information necessary to turn this server on / off. This often includes such things as IPMI username, password, and IP address.
+          required: true
+        deploy:
+          - Information necessary to deploy this server directly, without using Nova. THIS IS NOT RECOMMENDED.
+        console:
+          - Information necessary to connect to this server's serial console. Not all drivers support this.
+        management:
+          - Information necessary to interact with this server's management interface. May be shared by power_info in some cases.
+      required: true
+    nics:
+      description:
+        - A list of network interface cards, eg, " - mac: aa:bb:cc:aa:bb:cc"
+      required: true
     properties:
       description:
         - Definition of the physical characteristics of this server, used for scheduling purposes
@@ -69,20 +86,6 @@ options:
 requirements: ["shade"]
 '''
 
-def _create(module, cloud, properties):
-    kwargs = dict(
-            uuid = module.params['uuid'],  # pending https://review.openstack.org/128198
-            driver = module.params['driver'],
-            properties = properties,
-    )
-    server = cloud.create_machine(**kwargs)
-    return server
-
-
-def _delete(module, cloud):
-    return cloud.delete_machine(module.params['uuid'])
-
-
 def _parse_properties(module):
     p = module.params['properties']
     props = dict(
@@ -94,10 +97,27 @@ def _parse_properties(module):
     return props
 
 
+def _parse_driver_info(module):
+    p = module.params['driver_info']
+    info = p.get('power')
+    if not info:
+        raise shade.OpenStackCloudException(
+                "driver_info['power'] is required")
+    if p.get('console'):
+        info.update(p.get('console'))
+    if p.get('management'):
+        info.update(p.get('management'))
+    if p.get('deploy'):
+        info.update(p.get('deploy'))
+    return info
+
+
 def main():
     argument_spec = spec.openstack_argument_spec(
             uuid=dict(required=True),
             driver=dict(required=True),
+            driver_info=dict(type='dict', required=True),
+            nics=dict(type='list', required=True),
             properties=dict(type='dict', default={}),
     )
     module_kwargs = spec.openstack_module_kwargs()
@@ -109,17 +129,23 @@ def main():
 
         if module.params['state'] == 'present':
             properties = _parse_properties(module)
+            driver_info = _parse_driver_info(module)
+            kwargs = dict(
+                    uuid = module.params['uuid'],  # pending https://review.openstack.org/128198
+                    driver = module.params['driver'],
+                    properties = properties,
+                    driver_info = driver_info,
+            )
             if server is None:
-                server = _create(module, cloud, properties)
+                server = cloud.register_machine(module.params['nics'], **kwargs)
                 module.exit_json(changed = True, uuid = server.uuid)
             else:
                 # TODO: compare properties here and update if necessary
                 #       ... but the interface for that is terrible!
                 module.exit_json(changed = False, result = "Server already present")
         if module.params['state'] == 'absent':
-            print("state: absent")
             if server is not None:
-                _delete(module, cloud)
+                cloud.unregister_machine(module.params['nics'], module.params['uuid'])
                 module.exit_json(changed = True, result = "deleted")
             else:
                 module.exit_json(changed = False, result = "Server not found")
