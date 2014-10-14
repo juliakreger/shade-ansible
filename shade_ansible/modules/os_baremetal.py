@@ -1,0 +1,133 @@
+#!/usr/bin/python
+#coding: utf-8 -*-
+
+# (c) 2014, Hewlett-Packard Development Company, L.P.
+#
+# This module is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this software.  If not, see <http://www.gnu.org/licenses/>.
+
+try:
+    import shade
+    from shade_ansible import spec
+except ImportError:
+    print("failed=True msg='shade is required for this module'")
+
+
+DOCUMENTATION = '''
+---
+module: os_baremetal
+short_description: Create/Delete Bare Metal Resources from OpenStack
+extends_documentation_fragment: openstack
+description:
+    - Create or Remove Ironic nodes from OpenStack.
+options:
+    state:
+      description:
+        - Indicates desired state of the resource
+      choices: ['present', 'absent']
+      default: present
+    uuid:
+      description:
+        - globally unique identifier (UUID) to be given to the resource. Will be auto-generated if not specified.
+      required: false
+      default None
+    driver:
+      description:
+        - The name of the Ironic Driver to use with this node.
+      required: true
+      default: None
+    properties:
+      description:
+        - Definition of the physical characteristics of this server, used for scheduling purposes
+        cpu_arch:
+          description:
+            - CPU architecture (x86_64, i686, ...)
+          default: x86_64
+        cpus:
+          description:
+            - Number of CPU cores this machine has
+          default: 1
+        ram:
+          description:
+            - amount of RAM this machine has, in MB
+          default: 1
+        disk_size:
+          description:
+            - size of first storage device in this machine (typically /dev/sda), in GB
+          default: 1
+
+requirements: ["shade"]
+'''
+
+def _create(module, cloud, properties):
+    kwargs = dict(
+            uuid = module.params['uuid'],  # pending https://review.openstack.org/128198
+            driver = module.params['driver'],
+            properties = properties,
+    )
+    server = cloud.create_machine(**kwargs)
+    return server
+
+
+def _delete(module, cloud):
+    return cloud.delete_machine(module.params['uuid'])
+
+
+def _parse_properties(module):
+    p = module.params['properties']
+    props = dict(
+            cpu_arch = p.get('cpu_arch') if p.get('cpu_arch') else 'x86_64',
+            cpus = p.get('cpus') if p.get('cpus') else 1,
+            memory_mb = p.get('ram') if p.get('ram') else 1,
+            local_gb = p.get('disk_size') if p.get('disk_size') else 1,
+    )
+    return props
+
+
+def main():
+    argument_spec = spec.openstack_argument_spec(
+            uuid=dict(required=True),
+            driver=dict(required=True),
+            properties=dict(type='dict', default={}),
+    )
+    module_kwargs = spec.openstack_module_kwargs()
+    module = AnsibleModule(argument_spec, **module_kwargs)
+
+    try:
+        cloud = shade.operator_cloud(**module.params)
+        server = cloud.get_machine_by_uuid(module.params['uuid'])
+
+        if module.params['state'] == 'present':
+            properties = _parse_properties(module)
+            if server is None:
+                server = _create(module, cloud, properties)
+                module.exit_json(changed = True, uuid = server.uuid)
+            else:
+                # TODO: compare properties here and update if necessary
+                #       ... but the interface for that is terrible!
+                module.exit_json(changed = False, result = "Server already present")
+        if module.params['state'] == 'absent':
+            print("state: absent")
+            if server is not None:
+                _delete(module, cloud)
+                module.exit_json(changed = True, result = "deleted")
+            else:
+                module.exit_json(changed = False, result = "Server not found")
+    except shade.OpenStackCloudException as e:
+        module.fail_json(msg=e.message)
+
+
+# this is magic, see lib/ansible/module_common.py
+from ansible.module_utils.basic import *
+from ansible.module_utils.openstack import *
+main()
