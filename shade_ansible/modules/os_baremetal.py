@@ -86,6 +86,29 @@ options:
 requirements: ["shade"]
 '''
 
+EXAMPLES='''
+# Enroll a node with some basic properties and driver info
+- os_baremetal:
+    cloud: "devstack"
+    driver: "pxe_ipmitool"
+    uuid: "a8cb6624-0d9f-4882-affc-046ebb96ec92"
+    properties:
+      cpus: 2
+      cpu_arch: "x86_64"
+      ram: 8192
+      disk_size: 64
+    nics:
+      - mac: "aa:bb:cc:aa:bb:cc"
+      - mac: "dd:ee:ff:dd:ee:ff"
+    driver_info:
+      power:
+        ipmi_address: "1.2.3.4"
+        ipmi_username: "admin"
+        ipmi_password: "adminpass"
+
+'''
+
+
 def _parse_properties(module):
     p = module.params['properties']
     props = dict(
