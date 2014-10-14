@@ -250,7 +250,7 @@ def _delete_server(module, cloud):
 
 def _get_image_id(module, cloud):
     if module.params['image_id']:
-        return module_params['image_id']
+        return module.params['image_id']
     return cloud.get_image_by_name(
         module.params['image_name'], module.params['image_exclude']).id
 
