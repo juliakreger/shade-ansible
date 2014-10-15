@@ -38,6 +38,10 @@ options:
      description:
         - Id of the instance
      default: None
+   mounts:
+     description:
+        - Optional list of dicts tying volumes to mount points
+     default: None
 requirements: ["shade"]
 '''
 
@@ -55,6 +59,7 @@ def main():
     argument_spec = spec.openstack_argument_spec(
         name=dict(default=None),
         id=dict(default=None),
+        mounts=dict(default={}),
     )
     module_kwargs = spec.openstack_module_kwargs(
         mutually_exclusive=[
@@ -72,7 +77,8 @@ def main():
             server = cloud.get_server_by_id(module.params['id'])
         else:
             server = cloud.get_server_by_name(module.params['name'])
-        hostvars = dict(openstack=meta.get_hostvars_from_server(cloud, server))
+        hostvars = dict(openstack=meta.get_hostvars_from_server(
+            cloud, server, mounts=module.params['mounts']))
         module.exit_json(changed=False, ansible_facts=hostvars)
 
     except shade.OpenStackCloudException as e:

@@ -6,10 +6,10 @@
   vars:
     cloud: mordred
     volumes:
-    - name: foo
+    - display_name: foo
       size: 5
       mount: /mnt/foo
-    - name: bar
+    - display_name: bar
       size: 10
       mount: /mnt/bar
   tasks: 
@@ -21,7 +21,7 @@
   - name: Add volume
     os_volume:
         cloud: "{{ cloud }}"
-        display_name: "{{ item.name }}"
+        display_name: "{{ item.display_name }}"
         size: "{{ item.size }}"
     with_items: volumes
   - name: Launch Node
@@ -41,12 +41,13 @@
     os_compute_volume:
         cloud: "{{ cloud }}"
         server_id: "{{ node.id }}"
-        volume_name: "{{ item.name }}"
+        volume_name: "{{ item.display_name }}"
     with_items: volumes
   - name: Get updated server info
     os_compute_facts:
         cloud: "{{ cloud }}"
         id: "{{ node.id }}"
+        mounts: "{{ volumes }}"
   - name: Add all instance public IPs to host group
     add_host:
         hostname: "{{ node.openstack.interface_ip }}"
@@ -65,7 +66,8 @@
     with_items: openstack.volumes
   - name: Mount volume
     mount:
-        src: "{{ openstack.volumes[0]['attachments'][0]['device'] }}"
-        name: "/mnt/vol"
+        src: "{{ item['attachments'][0]['device'] }}"
+        name: "{{ item.mount }}"
         fstype: ext4
         state: mounted
+    with_items: openstack.volumes
