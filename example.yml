@@ -23,7 +23,7 @@
         cloud: "{{ cloud }}"
         display_name: "{{ item.display_name }}"
         size: "{{ item.size }}"
-    with_items: volumes
+    with_items: volumes|default(dict())
   - name: Launch Node
     os_compute:
         cloud: "{{ cloud }}"

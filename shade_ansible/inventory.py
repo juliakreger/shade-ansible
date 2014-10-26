@@ -22,7 +22,6 @@ import time
 import os
 import argparse
 import collections
-from novaclient import exceptions
 
 try:
     import json
@@ -33,7 +32,7 @@ import os_client_config
 import shade
 
 
-class NovaInventory(object):
+class OpenStackInventory(object):
 
     def __init__(self, private=False, refresh=False):
         self.openstack_config = os_client_config.config.OpenStackConfig(
@@ -49,7 +48,7 @@ class NovaInventory(object):
         # Cache related
         if not os.path.exists(cache_path):
             os.makedirs(cache_path)
-        self.cache_file = os.path.join(cache_path, "shade-ansible.cache")
+        self.cache_file = os.path.join(cache_path, "ansible-inventory.cache")
 
     def is_cache_stale(self):
         ''' Determines if cache file has expired, or if it is still valid '''
@@ -115,7 +114,7 @@ class NovaInventory(object):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Nova Inventory Module')
+    parser = argparse.ArgumentParser(description='OpenStack Inventory Module')
     parser.add_argument('--private',
                         action='store_true',
                         help='Use private address for ansible host')
@@ -131,7 +130,7 @@ def parse_args():
 def main():
     args = parse_args()
     try:
-        inventory = NovaInventory(args.private, args.refresh)
+        inventory = OpenStackInventory(args.private, args.refresh)
         if args.list:
             inventory.list_instances()
         elif args.host:
