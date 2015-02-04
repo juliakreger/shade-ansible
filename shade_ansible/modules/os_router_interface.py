@@ -65,7 +65,8 @@ def _get_router_id(module, neutron):
     try:
         routers = neutron.list_routers(**kwargs)
     except Exception, e:
-        module.fail_json(msg = "Error in getting the router list: %s " % e.message)
+        module.fail_json(msg="Error in getting the router list: "
+                             "%s" % e.message)
     if not routers['routers']:
         return None
     return routers['routers'][0]['id']
@@ -74,31 +75,34 @@ def _get_router_id(module, neutron):
 def _get_subnet_id(module, neutron):
     subnet_id = None
     kwargs = {
-            'name': module.params['subnet_name'],
+        'name': module.params['subnet_name'],
     }
     try:
         subnets = neutron.list_subnets(**kwargs)
     except Exception, e:
-        module.fail_json( msg = " Error in getting the subnet list:%s " % e.message)
+        module.fail_json(msg=" Error in getting the subnet list: "
+                             "%s" % e.message)
     if not subnets['subnets']:
         return None
     return subnets['subnets'][0]['id']
 
+
 def _get_port_id(neutron, module, router_id, subnet_id):
     kwargs = {
-            'device_id': router_id,
+        'device_id': router_id,
     }
     try:
         ports = neutron.list_ports(**kwargs)
     except Exception, e:
-        module.fail_json( msg = "Error in listing ports: %s" % e.message)
+        module.fail_json(msg="Error in listing ports: %s" % e.message)
     if not ports['ports']:
         return None
-    for port in  ports['ports']:
+    for port in ports['ports']:
         for subnet in port['fixed_ips']:
             if subnet['subnet_id'] == subnet_id:
                 return port['id']
     return None
+
 
 def _add_interface_router(neutron, module, router_id, subnet_id):
     kwargs = {
@@ -107,23 +111,27 @@ def _add_interface_router(neutron, module, router_id, subnet_id):
     try:
         neutron.add_interface_router(router_id, kwargs)
     except Exception, e:
-        module.fail_json(msg = "Error in adding interface to router: %s" % e.message)
+        module.fail_json(msg="Error in adding interface to router: "
+                             "%s" % e.message)
     return True
 
-def  _remove_interface_router(neutron, module, router_id, subnet_id):
+
+def _remove_interface_router(neutron, module, router_id, subnet_id):
     kwargs = {
         'subnet_id': subnet_id
     }
     try:
         neutron.remove_interface_router(router_id, kwargs)
     except Exception, e:
-        module.fail_json(msg="Error in removing interface from router: %s" % e.message)
+        module.fail_json(msg="Error in removing interface from router: "
+                             "%s" % e.message)
     return True
+
 
 def main():
     argument_spec = openstack_argument_spec(
-        router_name                     = dict(required=True),
-        subnet_name                     = dict(required=True),
+        router_name=dict(required=True),
+        subnet_name=dict(required=True),
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)
@@ -134,11 +142,13 @@ def main():
 
         router_id = _get_router_id(module, neutron)
         if not router_id:
-            module.fail_json(msg="failed to get the router id, please check the router name")
+            module.fail_json(msg="failed to get the router id, "
+                                 "please check the router name")
 
         subnet_id = _get_subnet_id(module, neutron)
         if not subnet_id:
-            module.fail_json(msg="failed to get the subnet id, please check the subnet name")
+            module.fail_json(msg="failed to get the subnet id, "
+                                 "please check the subnet name")
 
         if module.params['state'] == 'present':
             port_id = _get_port_id(neutron, module, router_id, subnet_id)
@@ -150,7 +160,7 @@ def main():
         if module.params['state'] == 'absent':
             port_id = _get_port_id(neutron, module, router_id, subnet_id)
             if not port_id:
-                module.exit_json(changed = False, result = "Success")
+                module.exit_json(changed=False, result="Success")
             _remove_interface_router(neutron, module, router_id, subnet_id)
             module.exit_json(changed=True, result="Deleted")
     except shade.OpenStackCloudException as e:
@@ -161,4 +171,3 @@ def main():
 from ansible.module_utils.basic import *
 from ansible.module_utils.openstack import *
 main()
-

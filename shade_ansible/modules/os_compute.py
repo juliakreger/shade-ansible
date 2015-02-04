@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 # Copyright (c) 2014 Hewlett-Packard Development Company, L.P.
 # Copyright (c) 2013, Benno Joy <benno@ansible.com>
@@ -30,7 +30,7 @@ except ImportError:
     print("failed=True msg='shade is required for this module'")
 
 from novaclient.v1_1 import client as nova_client
-from novaclient.v1_1 import floating_ips 
+from novaclient.v1_1 import floating_ips
 from novaclient import exceptions
 from novaclient import utils
 
@@ -244,7 +244,7 @@ def _delete_server(module, cloud):
             module.params['name'], wait=module.params['wait'],
             timeout=module.params['timeout'])
     except Exception as e:
-        module.fail_json( msg = "Error in deleting vm: %s" % e.message)
+        module.fail_json(msg="Error in deleting vm: %s" % e.message)
     module.exit_json(changed=True, result='deleted')
 
 
@@ -268,11 +268,11 @@ def _create_server(module, cloud):
 
     bootargs = [module.params['name'], image_id, flavor_id]
     bootkwargs = {
-                'nics' : module.params['nics'],
-                'meta' : module.params['meta'],
-                'security_groups': module.params['security_groups'].split(','),
-                'userdata': module.params['userdata'],
-                'config_drive': module.params['config_drive'],
+        'nics': module.params['nics'],
+        'meta': module.params['meta'],
+        'security_groups': module.params['security_groups'].split(','),
+        'userdata': module.params['userdata'],
+        'config_drive': module.params['config_drive'],
     }
 
     for optional_param in ('region_name', 'key_name', 'availability_zone'):
@@ -297,7 +297,9 @@ def _delete_floating_ip_list(cloud, server, extra_ips):
 
 def _check_floating_ips(module, cloud, server):
     changed = False
-    if module.params['floating_ip_pools'] or module.params['floating_ips'] or module.params['auto_floating_ip']:
+    if (module.params['floating_ip_pools'] or
+            module.params['floating_ips'] or
+            module.params['auto_floating_ip']):
         ips = openstack_find_nova_addresses(server.addresses, 'floating')
         if not ips:
             # If we're configured to have a floating but we don't have one,
@@ -334,43 +336,44 @@ def _get_server_state(module, cloud):
     if server and module.params['state'] == 'present':
         if server.status != 'ACTIVE':
             module.fail_json(
-                msg="The instance is available but not Active state:" + server.status)
+                msg="The instance is available but not Active"
+                    " state:" + server.status)
         (ip_changed, server) = _check_floating_ips(module, cloud, server)
         _exit_hostvars(module, cloud, server, ip_changed)
     if server and module.params['state'] == 'absent':
         return True
     if module.params['state'] == 'absent':
-        module.exit_json(changed = False, result = "not present")
+        module.exit_json(changed=False, result="not present")
     return True
 
 
 def main():
 
     argument_spec = spec.openstack_argument_spec(
-        name                            = dict(required=True),
-        image_id                        = dict(default=None),
-        image_name                      = dict(default=None),
-        image_exclude                   = dict(default='(deprecated)'),
-        flavor_id                       = dict(default=None),
-        flavor_ram                      = dict(default=None, type='int'),
-        flavor_include                  = dict(default=None),
-        key_name                        = dict(default=None),
-        security_groups                 = dict(default='default'),
-        nics                            = dict(default=None),
-        meta                            = dict(default=None),
-        userdata                        = dict(default=None),
-        config_drive                    = dict(default=False, type='bool'),
-        auto_floating_ip                = dict(default=True, type='bool'),
-        floating_ips                    = dict(default=None),
-        floating_ip_pools               = dict(default=None),
+        name=dict(required=True),
+        image_id=dict(default=None),
+        image_name=dict(default=None),
+        image_exclude=dict(default='(deprecated)'),
+        flavor_id=dict(default=None),
+        flavor_ram=dict(default=None, type='int'),
+        flavor_include=dict(default=None),
+        key_name=dict(default=None),
+        security_groups=dict(default='default'),
+        nics=dict(default=None),
+        meta=dict(default=None),
+        userdata=dict(default=None),
+        config_drive=dict(default=False, type='bool'),
+        auto_floating_ip=dict(default=True, type='bool'),
+        floating_ips=dict(default=None),
+        floating_ip_pools=dict(default=None),
     )
     module_kwargs = spec.openstack_module_kwargs(
         mutually_exclusive=[
-            ['auto_floating_ip','floating_ips'],
-            ['auto_floating_ip','floating_ip_pools'],
-            ['floating_ips','floating_ip_pools'],
-            ['image_id','image_name'],
-            ['flavor_id','flavor_ram'],
+            ['auto_floating_ip', 'floating_ips'],
+            ['auto_floating_ip', 'floating_ip_pools'],
+            ['floating_ips', 'floating_ip_pools'],
+            ['image_id', 'image_name'],
+            ['flavor_id', 'flavor_ram'],
         ],
     )
     module = AnsibleModule(argument_spec, **module_kwargs)
@@ -379,8 +382,10 @@ def main():
         cloud = shade.openstack_cloud(**module.params)
 
         if module.params['state'] == 'present':
-            if not module.params['image_id'] and not module.params['image_name']:
-                module.fail_json( msg = "Parameter 'image_id' or `image_name` is required if state == 'present'")
+            if (not module.params['image_id'] and
+                    not module.params['image_name']):
+                module.fail_json(msg="Parameter 'image_id' or `image_name`"
+                                     " is required if state == 'present'")
             else:
                 _get_server_state(module, cloud)
                 _create_server(module, cloud)
@@ -394,4 +399,3 @@ def main():
 from ansible.module_utils.basic import *
 from ansible.module_utils.openstack import *
 main()
-

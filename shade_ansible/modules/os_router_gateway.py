@@ -59,15 +59,17 @@ EXAMPLES = '''
 
 def _get_router_id(module, neutron):
     kwargs = {
-            'name': module.params['router_name'],
+        'name': module.params['router_name'],
     }
     try:
         routers = neutron.list_routers(**kwargs)
     except Exception, e:
-        module.fail_json(msg = "Error in getting the router list: %s " % e.message)
+        module.fail_json(msg="Error in getting the router list: "
+                             "%s" % e.message)
     if not routers['routers']:
             return None
     return routers['routers'][0]['id']
+
 
 def _get_net_id(neutron, module):
     kwargs = {
@@ -77,10 +79,12 @@ def _get_net_id(neutron, module):
     try:
         networks = neutron.list_networks(**kwargs)
     except Exception, e:
-        module.fail_json("Error in listing neutron networks: %s" % e.message)
+        module.fail_json(msg="Error in listing neutron networks: "
+                             "%s" % e.message)
     if not networks['networks']:
         return None
     return networks['networks'][0]['id']
+
 
 def _get_port_id(neutron, module, router_id, network_id):
     kwargs = {
@@ -90,10 +94,11 @@ def _get_port_id(neutron, module, router_id, network_id):
     try:
         ports = neutron.list_ports(**kwargs)
     except Exception, e:
-        module.fail_json( msg = "Error in listing ports: %s" % e.message)
+        module.fail_json(msg="Error in listing ports: %s" % e.message)
     if not ports['ports']:
         return None
     return ports['ports'][0]['id']
+
 
 def _add_gateway_router(neutron, module, router_id, network_id):
     kwargs = {
@@ -102,21 +107,25 @@ def _add_gateway_router(neutron, module, router_id, network_id):
     try:
         neutron.add_gateway_router(router_id, kwargs)
     except Exception, e:
-        module.fail_json(msg = "Error in adding gateway to router: %s" % e.message)
+        module.fail_json(msg="Error in adding gateway to router: "
+                             "%s" % e.message)
     return True
 
-def  _remove_gateway_router(neutron, module, router_id):
+
+def _remove_gateway_router(neutron, module, router_id):
     try:
         neutron.remove_gateway_router(router_id)
     except Exception, e:
-        module.fail_json(msg = "Error in removing gateway to router: %s" % e.message)
+        module.fail_json(msg="Error in removing gateway to router: "
+                             "%s" % e.message)
     return True
+
 
 def main():
 
     argument_spec = openstack_argument_spec(
-        router_name        = dict(required=True),
-        network_name       = dict(required=True),
+        router_name=dict(required=True),
+        network_name=dict(required=True),
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)
@@ -128,11 +137,14 @@ def main():
         router_id = _get_router_id(module, neutron)
 
         if not router_id:
-            module.fail_json(msg="failed to get the router id, please check the router name")
+            module.fail_json(msg="failed to get the router id, please check "
+                                 "the router name")
 
         network_id = _get_net_id(neutron, module)
         if not network_id:
-            module.fail_json(msg="failed to get the network id, please check the network name and make sure it is external")
+            module.fail_json(msg="failed to get the network id, please check "
+                                 "the network name and make sure it is "
+                                 "external")
 
         if module.params['state'] == 'present':
             port_id = _get_port_id(neutron, module, router_id, network_id)
@@ -154,4 +166,3 @@ def main():
 from ansible.module_utils.basic import *
 from ansible.module_utils.openstack import *
 main()
-

@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 # (c) 2013, Benno Joy <benno@ansible.com>
 #
@@ -94,6 +94,7 @@ EXAMPLES = '''
 
 _os_network_id = None
 
+
 def _get_net_id(neutron, module):
     kwargs = {
         'name': module.params['network_name'],
@@ -112,7 +113,7 @@ def _get_subnet_id(module, neutron):
     subnet_id = None
     _os_network_id = _get_net_id(neutron, module)
     if not _os_network_id:
-        module.fail_json(msg = "network id of network not found.")
+        module.fail_json(msg="network id of network not found.")
     else:
         kwargs = {
             'name': module.params['name'],
@@ -120,27 +121,30 @@ def _get_subnet_id(module, neutron):
         try:
             subnets = neutron.list_subnets(**kwargs)
         except Exception, e:
-            module.fail_json( msg = " Error in getting the subnet list:%s " % e.message)
+            module.fail_json(msg=" Error in getting the subnet list: "
+                                 "%s" % e.message)
         if not subnets['subnets']:
             return None
         return subnets['subnets'][0]['id']
 
+
 def _create_subnet(module, neutron):
     neutron.format = 'json'
     subnet = {
-            'name':            module.params['name'],
-            'ip_version':      module.params['ip_version'],
-            'enable_dhcp':     module.params['enable_dhcp'],
-            'gateway_ip':      module.params['gateway_ip'],
-            'dns_nameservers': module.params['dns_nameservers'],
-            'network_id':      _os_network_id,
-            'cidr':            module.params['cidr'],
+        'name':            module.params['name'],
+        'ip_version':      module.params['ip_version'],
+        'enable_dhcp':     module.params['enable_dhcp'],
+        'gateway_ip':      module.params['gateway_ip'],
+        'dns_nameservers': module.params['dns_nameservers'],
+        'network_id':      _os_network_id,
+        'cidr':            module.params['cidr'],
     }
-    if module.params['allocation_pool_start'] and module.params['allocation_pool_end']:
+    if (module.params['allocation_pool_start']
+            and module.params['allocation_pool_end']):
         allocation_pools = [
             {
-                'start' : module.params['allocation_pool_start'],
-                'end'   :  module.params['allocation_pool_end']
+                'start': module.params['allocation_pool_start'],
+                'end': module.params['allocation_pool_end']
             }
         ]
         subnet.update({'allocation_pools': allocation_pools})
@@ -153,7 +157,8 @@ def _create_subnet(module, neutron):
     try:
         new_subnet = neutron.create_subnet(dict(subnet=subnet))
     except Exception, e:
-        module.fail_json(msg = "Failure in creating subnet: %s" % e.message)
+        module.fail_json(msg="Failure in creating subnet: "
+                             "%s" % e.message)
     return new_subnet['subnet']['id']
 
 
@@ -161,22 +166,23 @@ def _delete_subnet(module, neutron, subnet_id):
     try:
         neutron.delete_subnet(subnet_id)
     except Exception, e:
-        module.fail_json( msg = "Error in deleting subnet: %s" % e.message)
+        module.fail_json(msg="Error in deleting subnet: "
+                             "%s" % e.message)
     return True
 
 
 def main():
 
     argument_spec = openstack_argument_spec(
-        name                    = dict(required=True),
-        network_name            = dict(required=True),
-        cidr                    = dict(required=True),
-        ip_version              = dict(default='4', choices=['4', '6']),
-        enable_dhcp             = dict(default='true', type='bool'),
-        gateway_ip              = dict(default=None),
-        dns_nameservers         = dict(default=None),
-        allocation_pool_start   = dict(default=None),
-        allocation_pool_end     = dict(default=None),
+        name=dict(required=True),
+        network_name=dict(required=True),
+        cidr=dict(required=True),
+        ip_version=dict(default='4', choices=['4', '6']),
+        enable_dhcp=dict(default='true', type='bool'),
+        gateway_ip=dict(default=None),
+        dns_nameservers=dict(default=None),
+        allocation_pool_start=dict(default=None),
+        allocation_pool_end=dict(default=None),
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)
@@ -188,16 +194,20 @@ def main():
             subnet_id = _get_subnet_id(module, neutron)
             if not subnet_id:
                 subnet_id = _create_subnet(module, neutron)
-                module.exit_json(changed = True, result = "Created" , id = subnet_id)
+                module.exit_json(changed=True, result="Created", id=subnet_id)
             else:
-                module.exit_json(changed = False, result = "success" , id = subnet_id)
+                module.exit_json(
+                    changed=False,
+                    result="success",
+                    id=subnet_id
+                )
         else:
             subnet_id = _get_subnet_id(module, neutron)
             if not subnet_id:
-                module.exit_json(changed = False, result = "success")
+                module.exit_json(changed=False, result="success")
             else:
                 _delete_subnet(module, neutron, subnet_id)
-                module.exit_json(changed = True, result = "deleted")
+                module.exit_json(changed=True, result="deleted")
     except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 
@@ -206,4 +216,3 @@ def main():
 from ansible.module_utils.basic import *
 from ansible.module_utils.openstack import *
 main()
-

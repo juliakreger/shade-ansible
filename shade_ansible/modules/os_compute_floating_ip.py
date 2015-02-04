@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 # Copyright (c) 2014 Hewlett-Packard Development Company, L.P.
 # Copyright (c) 2013, Benno Joy <benno@ansible.com>
@@ -70,23 +70,29 @@ def _get_server_state(module, nova):
             if server:
                 info = server._info
                 if info['name'] == module.params['instance_name']:
-                    if info['status'] != 'ACTIVE' and module.params['state'] == 'present':
-                        module.fail_json(msg="The VM is available but not Active. state:" + info['status'])
+                    if (info['status'] != 'ACTIVE' and
+                            module.params['state'] == 'present'):
+                        module.fail_json(msg="The VM is available"
+                                             " but not Active."
+                                             " state:" + info['status'])
                     server_info = info
                     break
     except Exception, e:
-            module.fail_json(msg = "Error in getting the server list: %s" % e.message)
+            module.fail_json(msg="Error in getting the server"
+                                 " list: %s" % e.message)
     return server_info, server
 
+
 def _get_port_id(neutron, module, instance_id):
-    kwargs = dict(device_id = instance_id)
+    kwargs = dict(device_id=instance_id)
     try:
         ports = neutron.list_ports(**kwargs)
     except Exception, e:
-        module.fail_json( msg = "Error in listing ports: %s" % e.message)
+        module.fail_json(msg="Error in listing ports: %s" % e.message)
     if not ports['ports']:
         return None
     return ports['ports'][0]['id']
+
 
 def _get_floating_ip_id(module, neutron):
     kwargs = {
@@ -95,9 +101,11 @@ def _get_floating_ip_id(module, neutron):
     try:
         ips = neutron.list_floatingips(**kwargs)
     except Exception, e:
-        module.fail_json(msg = "error in fetching the floatingips's %s" % e.message)
+        module.fail_json(msg="error in fetching the"
+                             " floatingips's %s" % e.message)
     if not ips['floatingips']:
-        module.fail_json(msg = "Could find the ip specified in parameter, Please check")
+        module.fail_json(msg="Could find the ip specified"
+                             " in parameter, Please check")
     ip = ips['floatingips'][0]['id']
     if not ips['floatingips'][0]['port_id']:
         state = "detached"
@@ -105,21 +113,30 @@ def _get_floating_ip_id(module, neutron):
         state = "attached"
     return state, ip
 
+
 def _update_floating_ip(neutron, module, port_id, floating_ip_id):
     kwargs = {
         'port_id': port_id
     }
     try:
-        result = neutron.update_floatingip(floating_ip_id, {'floatingip': kwargs})
+        result = neutron.update_floatingip(
+            floating_ip_id, {'floatingip': kwargs}
+        )
     except Exception, e:
-        module.fail_json(msg = "There was an error in updating the floating ip address: %s" % e.message)
-    module.exit_json(changed = True, result = result, public_ip=module.params['ip_address'])
+        module.fail_json(
+            msg="There was an error in updating the floating ip address: %s"
+            % e.message
+        )
+    module.exit_json(changed=True,
+                     result=result,
+                     public_ip=module.params['ip_address'])
+
 
 def main():
 
     argument_spec = spec.openstack_argument_spec(
-        ip_address                      = dict(required=True),
-        instance_name                   = dict(required=True),
+        ip_address=dict(required=True),
+        instance_name=dict(required=True),
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)
@@ -132,21 +149,27 @@ def main():
         state, floating_ip_id = _get_floating_ip_id(module, neutron)
         if module.params['state'] == 'present':
             if state == 'attached':
-                module.exit_json(changed = False, result = 'attached', public_ip=module.params['ip_address'])
+                module.exit_json(
+                    changed=False,
+                    result='attached',
+                    public_ip=module.params['ip_address']
+                )
             server_info, server_obj = _get_server_state(module, nova)
             if not server_info:
-                module.fail_json(msg = " The instance name provided cannot be found")
+                module.fail_json(msg="The instance name provided"
+                                     " cannot be found")
             port_id = _get_port_id(neutron, module, server_info['id'])
             if not port_id:
-                module.fail_json(msg = "Cannot find a port for this instance, maybe fixed ip is not assigned")
+                module.fail_json(msg="Cannot find a port for this instance,"
+                                     " maybe fixed ip is not assigned")
             _update_floating_ip(neutron, module, port_id, floating_ip_id)
 
         if module.params['state'] == 'absent':
             if state == 'detached':
-                module.exit_json(changed = False, result = 'detached')
+                module.exit_json(changed=False, result='detached')
             if state == 'attached':
                 _update_floating_ip(neutron, module, None, floating_ip_id)
-            module.exit_json(changed = True, result = "detached")
+            module.exit_json(changed=True, result="detached")
     except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 
@@ -154,4 +177,3 @@ def main():
 from ansible.module_utils.basic import *
 from ansible.module_utils.openstack import *
 main()
-

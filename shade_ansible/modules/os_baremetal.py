@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 # (c) 2014, Hewlett-Packard Development Company, L.P.
 #
@@ -86,7 +86,7 @@ options:
 requirements: ["shade"]
 '''
 
-EXAMPLES='''
+EXAMPLES = '''
 # Enroll a node with some basic properties and driver info
 - os_baremetal:
     cloud: "devstack"
@@ -112,10 +112,10 @@ EXAMPLES='''
 def _parse_properties(module):
     p = module.params['properties']
     props = dict(
-            cpu_arch = p.get('cpu_arch') if p.get('cpu_arch') else 'x86_64',
-            cpus = p.get('cpus') if p.get('cpus') else 1,
-            memory_mb = p.get('ram') if p.get('ram') else 1,
-            local_gb = p.get('disk_size') if p.get('disk_size') else 1,
+        cpu_arch=p.get('cpu_arch') if p.get('cpu_arch') else 'x86_64',
+        cpus=p.get('cpus') if p.get('cpus') else 1,
+        memory_mb=p.get('ram') if p.get('ram') else 1,
+        local_gb=p.get('disk_size') if p.get('disk_size') else 1,
     )
     return props
 
@@ -125,7 +125,7 @@ def _parse_driver_info(module):
     info = p.get('power')
     if not info:
         raise shade.OpenStackCloudException(
-                "driver_info['power'] is required")
+            "driver_info['power'] is required")
     if p.get('console'):
         info.update(p.get('console'))
     if p.get('management'):
@@ -137,11 +137,11 @@ def _parse_driver_info(module):
 
 def main():
     argument_spec = spec.openstack_argument_spec(
-            uuid=dict(required=True),
-            driver=dict(required=True),
-            driver_info=dict(type='dict', required=True),
-            nics=dict(type='list', required=True),
-            properties=dict(type='dict', default={}),
+        uuid=dict(required=True),
+        driver=dict(required=True),
+        driver_info=dict(type='dict', required=True),
+        nics=dict(type='list', required=True),
+        properties=dict(type='dict', default={}),
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)
@@ -154,24 +154,27 @@ def main():
             properties = _parse_properties(module)
             driver_info = _parse_driver_info(module)
             kwargs = dict(
-                    uuid = module.params['uuid'],  # pending https://review.openstack.org/128198
-                    driver = module.params['driver'],
-                    properties = properties,
-                    driver_info = driver_info,
+                uuid=module.params['uuid'],
+                driver=module.params['driver'],
+                properties=properties,
+                driver_info=driver_info,
             )
             if server is None:
-                server = cloud.register_machine(module.params['nics'], **kwargs)
-                module.exit_json(changed = True, uuid = server.uuid)
+                server = cloud.register_machine(module.params['nics'],
+                                                **kwargs)
+                module.exit_json(changed=True, uuid=server.uuid)
             else:
                 # TODO: compare properties here and update if necessary
                 #       ... but the interface for that is terrible!
-                module.exit_json(changed = False, result = "Server already present")
+                module.exit_json(changed=False,
+                                 result="Server already present")
         if module.params['state'] == 'absent':
             if server is not None:
-                cloud.unregister_machine(module.params['nics'], module.params['uuid'])
-                module.exit_json(changed = True, result = "deleted")
+                cloud.unregister_machine(module.params['nics'],
+                                         module.params['uuid'])
+                module.exit_json(changed=True, result="deleted")
             else:
-                module.exit_json(changed = False, result = "Server not found")
+                module.exit_json(changed=False, result="Server not found")
     except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 

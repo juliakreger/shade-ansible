@@ -61,12 +61,12 @@ options:
      default: None
    image_id:
      descritpion:
-       - Image id for boot from volume 
+       - Image id for boot from volume
      required: false
      default: None
    image_name:
      descritpion:
-       - Image name for boot from volume 
+       - Image name for boot from volume
      required: false
      default: None
    snapshot_id:
@@ -94,6 +94,7 @@ EXAMPLES = '''
       size: 40
       display_name: test_volume
 '''
+
 
 def _present_volume(module, cinder, cloud):
     for v in cinder.volumes.list():
@@ -165,7 +166,7 @@ def main():
         snapshot_id=dict(default=None),
     )
     module_kwargs = spec.openstack_module_kwargs(
-        mutually_exclusive = [
+        mutually_exclusive=[
             ['image_id', 'snapshot_id'],
             ['image_name', 'snapshot_id'],
             ['image_id', 'image_name']

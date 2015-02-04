@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 # Copyright (c) 2014 Hewlett-Packard Development Company, L.P.
 #
@@ -84,6 +84,7 @@ EXAMPLES = '''
       volume_name: mysql-data
       device: /dev/vdb
 '''
+
 
 def _wait_for_detach(cinder, module):
     expires = float(module.params['timeout']) + time.time()
@@ -200,7 +201,7 @@ def main():
         ],
         required_one_of=[
             ['server_id', 'server_name'],
-            ['volume_id','volume_name'],
+            ['volume_id', 'volume_name'],
         ],
     )
 
@@ -211,11 +212,11 @@ def main():
         cinder = cloud.cinder_client
         nova = cloud.nova_client
 
-        if module.params['volume_name'] != None:
+        if module.params['volume_name'] is not None:
             module.params['volume_id'] = cloud.get_volume_id(
                 module.params['volume_name'])
 
-        if module.params['server_name'] != None:
+        if module.params['server_name'] is not None:
             module.params['server_id'] = cloud.get_server_id(
                 module.params['server_name'])
 

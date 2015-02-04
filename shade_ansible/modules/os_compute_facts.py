@@ -54,6 +54,7 @@ EXAMPLES = '''
 - debug: openstack
 '''
 
+
 def main():
 
     argument_spec = spec.openstack_argument_spec(
@@ -88,4 +89,3 @@ def main():
 from ansible.module_utils.basic import *
 from ansible.module_utils.openstack import *
 main()
-

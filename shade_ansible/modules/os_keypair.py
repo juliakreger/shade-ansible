@@ -64,6 +64,7 @@ EXAMPLES = '''
                 project_name=admin name=ansible_key
 '''
 
+
 def main():
     argument_spec = spec.openstack_argument_spec(
         name=dict(required=True),
@@ -78,26 +79,35 @@ def main():
         if module.params['state'] == 'present':
             for key in nova.list_keypairs():
                 if key.name == module.params['name']:
-                    if module.params['public_key'] and (module.params['public_key'] != key.public_key ):
-                        module.fail_json(msg = "name {} present but key hash not the same as offered.  Delete key first.".format(key['name']))
+                    if (module.params['public_key'] and
+                            (module.params['public_key'] != key.public_key)):
+                        module.fail_json(
+                            msg="name {} present but key hash not "
+                                "the same as offered. "
+                                "Delete key first.".format(key['name']))
                     else:
-                        module.exit_json(changed = False, result = "Key present")            
+                        module.exit_json(changed=False, result="Key present")
             try:
-                key = nova.create_keypair(module.params['name'], module.params['public_key'])
+                key = nova.create_keypair(
+                    module.params['name'],
+                    module.params['public_key']
+                )
             except Exception, e:
-                module.exit_json(msg = "Error in creating the keypair: %s" % e.message)
+                module.exit_json(msg="Error in creating the "
+                                     "keypair: %s" % e.message)
             if not module.params['public_key']:
-                module.exit_json(changed = True, key = key.private_key)
-            module.exit_json(changed = True, key = None)
+                module.exit_json(changed=True, key=key.private_key)
+            module.exit_json(changed=True, key=None)
         if module.params['state'] == 'absent':
             for key in nova.list_keypairs():
                 if key.name == module.params['name']:
                     try:
                         nova.delete_keypair(module.params['name'])
                     except Exception, e:
-                        module.fail_json(msg = "The keypair deletion has failed: %s" % e.message)
-                    module.exit_json( changed = True, result = "deleted")
-            module.exit_json(changed = False, result = "not present")
+                        module.fail_json(msg="The keypair deletion has "
+                                             "failed: %s" % e.message)
+                    module.exit_json(changed=True, result="deleted")
+            module.exit_json(changed=False, result="not present")
     except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 
@@ -105,4 +115,3 @@ def main():
 from ansible.module_utils.basic import *
 from ansible.module_utils.openstack import *
 main()
-

@@ -106,12 +106,12 @@ import time
 
 def _glance_image_create(module, params, client):
     kwargs = {
-                'name':             params.get('name'),
-                'disk_format':      params.get('disk_format'),
-                'container_format': params.get('container_format'),
-                'owner':            params.get('owner'),
-                'is_public':        params.get('is_public'),
-                'copy_from':        params.get('copy_from'),
+        'name':             params.get('name'),
+        'disk_format':      params.get('disk_format'),
+        'container_format': params.get('container_format'),
+        'owner':            params.get('owner'),
+        'is_public':        params.get('is_public'),
+        'copy_from':        params.get('copy_from'),
     }
     try:
         timeout = params.get('timeout')
@@ -129,7 +129,8 @@ def _glance_image_create(module, params, client):
     if image.status == 'active':
         module.exit_json(changed=True, result=image.status, id=image.id)
     else:
-        module.fail_json(msg=" The module timed out, please check manually " + image.status)
+        module.fail_json(msg=" The module timed out, please check "
+                             "manually " + image.status)
 
 
 def _glance_delete_image(module, params, client):
@@ -145,24 +146,31 @@ def _glance_delete_image(module, params, client):
 def main():
 
     argument_spec = spec.openstack_argument_spec(
-        name              = dict(required=True),
-        disk_format       = dict(default='qcow2', choices=['aki', 'vhd', 'vmdk', 'raw', 'qcow2', 'vdi', 'iso']),
-        container_format  = dict(default='bare', choices=['aki', 'ari', 'bare', 'ovf']),
-        owner             = dict(default=None),
-        min_disk          = dict(default=None),
-        min_ram           = dict(default=None),
-        is_public         = dict(default=True),
-        copy_from         = dict(default= None),
-        file              = dict(default=None),
+        name=dict(required=True),
+        disk_format=dict(
+            default='qcow2',
+            choices=['aki', 'vhd', 'vmdk', 'raw', 'qcow2', 'vdi', 'iso']
+        ),
+        container_format=dict(
+            default='bare',
+            choices=['aki', 'ari', 'bare', 'ovf']
+        ),
+        owner=dict(default=None),
+        min_disk=dict(default=None),
+        min_ram=dict(default=None),
+        is_public=dict(default=True),
+        copy_from=dict(default=None),
+        file=dict(default=None),
     )
     module_kwargs = spec.openstack_module_kwargs(
-        mutually_exclusive = [['file','copy_from']],
+        mutually_exclusive=[['file', 'copy_from']],
     )
     module = AnsibleModule(argument_spec, **module_kwargs)
 
     if module.params['state'] == 'present':
         if not module.params['file'] and not module.params['copy_from']:
-            module.fail_json(msg="Either file or copy_from variable should be set to create the image")
+            module.fail_json(msg="Either file or copy_from variable should "
+                                 "be set to create the image")
 
     try:
         cloud = shade.openstack_cloud(**module.params)
@@ -171,14 +179,22 @@ def main():
 
         if module.params['state'] == 'present':
             if not id:
-                _glance_image_create(module, module.params, cloud.glance_client)
+                _glance_image_create(
+                    module,
+                    module.params,
+                    cloud.glance_client
+                )
             module.exit_json(changed=False, id=id, result="success")
 
         if module.params['state'] == 'absent':
             if not id:
                 module.exit_json(changed=False, result="Success")
             else:
-                _glance_delete_image(module, module.params, cloud.glance_client)
+                _glance_delete_image(
+                    module,
+                    module.params,
+                    cloud.glance_client
+                )
     except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 

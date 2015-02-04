@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 # Copyright (c) 2014 Hewlett-Packard Development Company, L.P.
 # Copyright (c) 2013, Benno Joy <benno@ansible.com>
@@ -72,12 +72,15 @@ def _get_server_state(module, nova):
             if server:
                 info = server._info
                 if info['name'] == module.params['instance_name']:
-                    if info['status'] != 'ACTIVE' and module.params['state'] == 'present':
-                        module.fail_json( msg="The VM is available but not Active. state:" + info['status'])
+                    if (info['status'] != 'ACTIVE' and
+                            module.params['state'] == 'present'):
+                        module.fail_json(msg="The VM is available but not Act"
+                                             "ive. state:" + info['status'])
                     server_info = info
                     break
     except Exception, e:
-        module.fail_json(msg = "Error in getting the server list: %s" % e.message)
+        module.fail_json(msg="Error in getting the server list: "
+                             "%s" % e.message)
     return server_info, server
 
 
@@ -94,14 +97,15 @@ def _get_port_info(neutron, module, instance_id, internal_network_name=None):
         subnets = neutron.list_subnets(**kwargs)
         subnet_id = subnets['subnets'][0]['id']
     kwargs = {
-            'device_id': instance_id,
+        'device_id': instance_id,
     }
     try:
         ports = neutron.list_ports(**kwargs)
     except Exception, e:
-        module.fail_json( msg = "Error in listing ports: %s" % e.message)
+        module.fail_json(msg="Error in listing ports: %s" % e.message)
     if subnet_id:
-        port = next(port for port in ports['ports'] if port['fixed_ips'][0]['subnet_id'] == subnet_id)
+        port = next(port for port in ports['ports'] if (
+            port['fixed_ips'][0]['subnet_id'] == subnet_id))
         port_id = port['id']
         fixed_ip_address = port['fixed_ips'][0]['ip_address']
     else:
@@ -114,28 +118,38 @@ def _get_port_info(neutron, module, instance_id, internal_network_name=None):
 
 def _get_floating_ip(module, neutron, fixed_ip_address):
     kwargs = {
-            'fixed_ip_address': fixed_ip_address
+        'fixed_ip_address': fixed_ip_address
     }
     try:
         ips = neutron.list_floatingips(**kwargs)
     except Exception, e:
-        module.fail_json(msg = "error in fetching the floatingips's %s" % e.message)
+        module.fail_json(msg="error in fetching the floating"
+                             "ips's %s" % e.message)
     if not ips['floatingips']:
         return None, None
-    return ips['floatingips'][0]['id'], ips['floatingips'][0]['floating_ip_address']
+    return (
+        ips['floatingips'][0]['id'],
+        ips['floatingips'][0]['floating_ip_address']
+    )
 
 
 def _create_floating_ip(neutron, module, port_id, net_id, fixed_ip):
     kwargs = {
-            'port_id': port_id,
-            'floating_network_id': net_id,
-            'fixed_ip_address': fixed_ip
+        'port_id': port_id,
+        'floating_network_id': net_id,
+        'fixed_ip_address': fixed_ip
     }
     try:
         result = neutron.create_floatingip({'floatingip': kwargs})
     except Exception, e:
-        module.fail_json(msg="There was an error in updating the floating ip address: %s" % e.message)
-    module.exit_json(changed=True, result=result, public_ip=result['floatingip']['floating_ip_address'])
+        module.fail_json(msg="There was an error in updating the floating "
+                             "ip address: %s" % e.message)
+    module.exit_json(
+        changed=True,
+        result=result,
+        public_ip=result['floatingip']['floating_ip_address']
+    )
+
 
 def _get_net_id(neutron, module):
     kwargs = {
@@ -149,23 +163,28 @@ def _get_net_id(neutron, module):
         return None
     return networks['networks'][0]['id']
 
+
 def _update_floating_ip(neutron, module, port_id, floating_ip_id):
     kwargs = {
         'port_id': port_id
     }
     try:
-        result = neutron.update_floatingip(floating_ip_id, {'floatingip': kwargs})
+        result = neutron.update_floatingip(
+            floating_ip_id,
+            {'floatingip': kwargs}
+        )
     except Exception, e:
-        module.fail_json(msg="There was an error in updating the floating ip address: %s" % e.message)
+        module.fail_json(msg="There was an error in updating the floating ip"
+                             " address: %s" % e.message)
     module.exit_json(changed=True, result=result)
 
 
 def main():
 
     argument_spec = spec.openstack_argument_spec(
-        network_name                    = dict(required=True),
-        instance_name                   = dict(required=True),
-        internal_network_name           = dict(default=None),
+        network_name=dict(required=True),
+        instance_name=dict(required=True),
+        internal_network_name=dict(default=None),
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)
@@ -191,10 +210,11 @@ def main():
 
         if module.params['state'] == 'present':
             if floating_ip:
-                module.exit_json(changed = False, public_ip=floating_ip)
+                module.exit_json(changed=False, public_ip=floating_ip)
             net_id = _get_net_id(neutron, module)
             if not net_id:
-                module.fail_json(msg = "cannot find the network specified, please check")
+                module.fail_json(msg="cannot find the network specified,"
+                                     " please check")
             _create_floating_ip(neutron, module, port_id, net_id, fixed_ip)
 
         if module.params['state'] == 'absent':
@@ -208,4 +228,3 @@ def main():
 from ansible.module_utils.basic import *
 from ansible.module_utils.openstack import *
 main()
-

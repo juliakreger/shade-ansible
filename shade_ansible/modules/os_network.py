@@ -106,21 +106,24 @@ def _set_tenant_id(module):
             _os_tenant_id = tenant.id
             break
     if not _os_tenant_id:
-        module.fail_json(msg = "The tenant id cannot be found, please check the parameters")
+        module.fail_json(msg="The tenant id cannot be found, please check "
+                             "the parameters")
 
 
 def _get_net_id(neutron, module):
     kwargs = {
-            'tenant_id': _os_tenant_id,
-            'name': module.params['name'],
+        'tenant_id': _os_tenant_id,
+        'name': module.params['name'],
     }
     try:
         networks = neutron.list_networks(**kwargs)
     except Exception, e:
-        module.fail_json(msg = "Error in listing neutron networks: %s" % e.message)
+        module.fail_json(msg="Error in listing neutron networks: "
+                             "%s" % e.message)
     if not networks['networks']:
         return None
     return networks['networks'][0]['id']
+
 
 def _create_network(module, neutron):
 
@@ -129,9 +132,15 @@ def _create_network(module, neutron):
     network = {
         'name':                      module.params.get('name'),
         'tenant_id':                 _os_tenant_id,
-        'provider:network_type':     module.params.get('provider_network_type'),
-        'provider:physical_network': module.params.get('provider_physical_network'),
-        'provider:segmentation_id':  module.params.get('provider_segmentation_id'),
+        'provider:network_type':     module.params.get(
+            'provider_network_type'
+        ),
+        'provider:physical_network': module.params.get(
+            'provider_physical_network'
+        ),
+        'provider:segmentation_id':  module.params.get(
+            'provider_segmentation_id'
+        ),
         'router:external':           module.params.get('router_external'),
         'shared':                    module.params.get('shared'),
         'admin_state_up':            module.params.get('admin_state_up'),
@@ -153,41 +162,49 @@ def _create_network(module, neutron):
         network.pop('provider:segmentation_id', None)
 
     try:
-        net = neutron.create_network({'network':network})
+        net = neutron.create_network({'network': network})
     except Exception, e:
-        module.fail_json(msg = "Error in creating network: %s" % e.message)
+        module.fail_json(msg="Error in creating network: %s" % e.message)
     return net['network']['id']
+
 
 def _delete_network(module, net_id, neutron):
 
     try:
         id = neutron.delete_network(net_id)
     except Exception, e:
-        module.fail_json(msg = "Error in deleting the network: %s" % e.message)
+        module.fail_json(msg="Error in deleting the network: %s" % e.message)
     return True
+
 
 def main():
 
     argument_spec = spec.openstack_argument_spec(
-        name                            = dict(required=True),
-        tenant_name                     = dict(default=None),
-        provider_network_type           = dict(default=None, choices=['local', 'vlan', 'flat', 'gre']),
-        provider_physical_network       = dict(default=None),
-        provider_segmentation_id        = dict(default=None),
-        router_external                 = dict(default=False, type='bool'),
-        shared                          = dict(default=False, type='bool'),
-        admin_state_up                  = dict(default=True, type='bool'),
+        name=dict(required=True),
+        tenant_name=dict(default=None),
+        provider_network_type=dict(
+            default=None,
+            choices=['local', 'vlan', 'flat', 'gre']
+        ),
+        provider_physical_network=dict(default=None),
+        provider_segmentation_id=dict(default=None),
+        router_external=dict(default=False, type='bool'),
+        shared=dict(default=False, type='bool'),
+        admin_state_up=dict(default=True, type='bool'),
     )
     module_kwargs = spec.openstack_module_kwargs()
     module = AnsibleModule(argument_spec, **module_kwargs)
 
-    if module.params['provider_network_type'] in ['vlan' , 'flat']:
+    if module.params['provider_network_type'] in ['vlan', 'flat']:
         if not module.params['provider_physical_network']:
-            module.fail_json(msg = " for vlan and flat networks, variable provider_physical_network should be set.")
+            module.fail_json(msg=" for vlan and flat networks, variable "
+                                 "provider_physical_network should be set.")
 
-    if module.params['provider_network_type']  in ['vlan', 'gre']:
+    if module.params['provider_network_type'] in ['vlan', 'gre']:
             if not module.params['provider_segmentation_id']:
-                module.fail_json(msg = " for vlan & gre networks, variable provider_segmentation_id should be set.")
+                module.fail_json(msg=" for vlan & gre networks, variable "
+                                     "provider_segmentation_id should "
+                                     "be set.")
 
     try:
         cloud = shade.openstack_cloud(**module.params)
@@ -199,17 +216,18 @@ def main():
             network_id = _get_net_id(neutron, module)
             if not network_id:
                 network_id = _create_network(module, neutron)
-                module.exit_json(changed = True, result = "Created", id = network_id)
+                module.exit_json(changed=True, result="Created", id=network_id)
             else:
-                module.exit_json(changed = False, result = "Success", id = network_id)
+                module.exit_json(changed=False, result="Success",
+                                 id=network_id)
 
         if module.params['state'] == 'absent':
             network_id = _get_net_id(neutron, module)
             if not network_id:
-                module.exit_json(changed = False, result = "Success")
+                module.exit_json(changed=False, result="Success")
             else:
                 _delete_network(module, network_id, neutron)
-                module.exit_json(changed = True, result = "Deleted")
+                module.exit_json(changed=True, result="Deleted")
     except shade.OpenStackCloudException as e:
         module.fail_json(msg=e.message)
 
@@ -218,4 +236,3 @@ def main():
 from ansible.module_utils.basic import *
 from ansible.module_utils.openstack import *
 main()
-
